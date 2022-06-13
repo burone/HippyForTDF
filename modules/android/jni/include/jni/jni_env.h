@@ -53,6 +53,8 @@ class JNIEnvironment {
   void init(JavaVM* vm, JNIEnv* env);
   JNIEnv* AttachCurrentThread();
 
+  void setJavaVM(JavaVM* vm);
+
  private:
   static std::shared_ptr<JNIEnvironment> instance_;
   static std::mutex mutex_;
