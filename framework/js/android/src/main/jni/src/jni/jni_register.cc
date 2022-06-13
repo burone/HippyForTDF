@@ -23,12 +23,14 @@
 #include "jni/jni_register.h"
 
 #include "base/unicode_string_view.h"
-#include "core/core.h"
+#include "base/logging.h"
+#include "core/base/common.h"
+//#include "core/core.h"
 #include "jni/jni_env.h"
 #include "jni/uri.h"
 
 using unicode_string_view = tdf::base::unicode_string_view;
-using StringViewUtils = hippy::base::StringViewUtils;
+//using StringViewUtils = hippy::base::StringViewUtils;
 
 std::unique_ptr<JNIRegister>& JNIRegister::GetInstance() {
   static std::unique_ptr<JNIRegister> instance = nullptr;

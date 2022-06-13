@@ -22,7 +22,8 @@
 
 #include "jni/scoped_java_ref.h"
 
-#include "core/core.h"
+#include <base/logging.h>
+//#include "core/core.h"
 #include "jni/jni_env.h"
 
 JavaRef::JavaRef(JNIEnv* j_env, jobject j_obj) : obj_(nullptr) {

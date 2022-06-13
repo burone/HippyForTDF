@@ -1,7 +1,7 @@
 set(LIB_NAME "dom")
 
 project("dom")
-set(LAYOUT_ENGINE "Taitank")
+set(LAYOUT_ENGINE "Yoga")
 
 get_filename_component(PROJECT_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/.." REALPATH)
 get_filename_component(CORE_DIR "${PROJECT_ROOT_DIR}/framework/js/core/" REALPATH)
