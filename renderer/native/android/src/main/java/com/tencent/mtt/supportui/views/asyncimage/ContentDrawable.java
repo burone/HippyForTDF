@@ -14,6 +14,8 @@
  */
 package com.tencent.mtt.supportui.views.asyncimage;
 
+import static com.tencent.mtt.supportui.views.asyncimage.AsyncImageView.SHAPE_CIRCLE;
+import static com.tencent.mtt.supportui.views.asyncimage.AsyncImageView.SHAPE_NORMAL;
 import static com.tencent.mtt.supportui.views.asyncimage.AsyncImageView.SOURCE_TYPE_SRC;
 
 import android.graphics.PorterDuff.Mode;
@@ -33,7 +35,6 @@ import android.graphics.PorterDuffColorFilter;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Shader;
-import android.graphics.drawable.Drawable;
 import android.os.Build;
 import com.tencent.mtt.supportui.views.asyncimage.AsyncImageView.ScaleType;
 
@@ -64,6 +65,8 @@ public class ContentDrawable extends BaseDrawable
 	private int							mImagePositionY;
 	public Path						    mSelfClipPath =  null;//自定义裁剪路径,这里按理应该设置位private,通过接口修改.鉴于981的改动风险,直接位public
 	private int                         sourceType = SOURCE_TYPE_SRC;
+
+  private int mShape = SHAPE_NORMAL;
 
 	public ContentDrawable()
 	{
@@ -134,6 +137,21 @@ public class ContentDrawable extends BaseDrawable
 		}
 	}
 
+	private ScaleType getAdjustScaleType() {
+	  if (mShape == SHAPE_NORMAL) {
+	    return mScaleType;
+    }
+	  return ScaleType.CENTER_INSIDE;
+  }
+
+  public void setShape(int shape) {
+    if (mShape == shape) {
+      return;
+    }
+    mShape = shape;
+    mNeedUpdateBorderPath = true;
+  }
+
 	public void setBorder(float[] radiusArray, float[] widthArray)
 	{
 		mBorderWidthArray = widthArray;
@@ -173,7 +191,7 @@ public class ContentDrawable extends BaseDrawable
 			float xScale = boundWidth / bitmapWidth;
 			float yScale = boundHeight / bitmapHeight;
 
-			ScaleType scaleType = mScaleType;
+			ScaleType scaleType = getAdjustScaleType();
 			if (scaleType == ScaleType.CENTER && (bitmapWidth > boundWidth || bitmapHeight > boundHeight)) {
 				scaleType = ScaleType.CENTER_INSIDE;
 			}
@@ -239,6 +257,22 @@ public class ContentDrawable extends BaseDrawable
 				mTempRectForBorderRadius.inset(fullBorderWidth * 0.5f, fullBorderWidth * 0.5f);
 			}
 
+			// 存在shape，优先应用
+			if (mShape != SHAPE_NORMAL) {
+			  // 圆形shape处理
+			  if (mShape == SHAPE_CIRCLE) {
+          final RectF srcRect = mTempRectForBorderRadius;
+          float circleD = Math.min(boundWidth, boundHeight);
+          RectF circleShape = new RectF(0, 0, circleD, circleD);
+          float srcCenterX = srcRect.centerX();
+          float srcCenterY = srcRect.centerY();
+          circleShape.offset(srcCenterX - circleShape.centerX(), srcCenterY - circleShape.centerY());
+          float r = circleD * 0.5f;
+          mBorderPath.addRoundRect(circleShape, new float[] { r, r, r, r, r, r, r, r }, Path.Direction.CW);
+        }
+        return;
+      }
+
 			if (CommonTool.hasPositiveItem(mBorderRadiusArray))
 			{
 
@@ -295,7 +329,7 @@ public class ContentDrawable extends BaseDrawable
 
 		updateContentRegion();
 		updatePath();
-    
+
 		if (mContentBitmap != null)
 		{
 			Matrix matrix = new Matrix();
@@ -315,7 +349,7 @@ public class ContentDrawable extends BaseDrawable
 			float xScale = boundWidth / bitmapWidth;
 			float yScale = boundHeight / bitmapHeight;
 
-			ScaleType scaleType = mScaleType;
+			ScaleType scaleType = getAdjustScaleType();
 			if (scaleType == ScaleType.CENTER && (bitmapWidth > boundWidth || bitmapHeight > boundHeight)) {
 				scaleType = ScaleType.CENTER_INSIDE;
 			}
@@ -408,7 +442,7 @@ public class ContentDrawable extends BaseDrawable
 			}
 
 		}
-        if(mScaleType == AsyncImageView.ScaleType.REPEAT)
+        if(getAdjustScaleType() == AsyncImageView.ScaleType.REPEAT)
         {
             BitmapShader bitmapShader = new BitmapShader(mContentBitmap, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT);
             mPaint.setShader(bitmapShader);
@@ -420,7 +454,7 @@ public class ContentDrawable extends BaseDrawable
             }
             return;
         }
-        if (CommonTool.hasPositiveItem(mBorderRadiusArray) || CommonTool.hasPositiveItem(mBorderWidthArray)
+        if (mShape != SHAPE_NORMAL || CommonTool.hasPositiveItem(mBorderRadiusArray) || CommonTool.hasPositiveItem(mBorderWidthArray)
 						|| Build.VERSION.SDK_INT < Build.VERSION_CODES.M)
         {
             // 有圆角

@@ -54,6 +54,9 @@ public class AsyncImageView extends ViewGroup implements Animator.AnimatorListen
     public final static int IMAGE_LOADING = 1;
     public final static int IMAGE_LOADED = 2;
 
+    public static final int SHAPE_NORMAL = 0;
+    public static final int SHAPE_CIRCLE = 1;
+
     protected final static int SOURCE_TYPE_SRC = 1;
     protected final static int SOURCE_TYPE_DEFAULT_SRC = 2;
     protected ImageDataSupplier mSourceDrawable;
@@ -81,6 +84,8 @@ public class AsyncImageView extends ViewGroup implements Animator.AnimatorListen
 
     private int mImagePositionX;
     private int mImagePositionY;
+
+    private int mShape = SHAPE_NORMAL;
 
     public enum ScaleType {
         FIT_XY,
@@ -199,6 +204,15 @@ public class AsyncImageView extends ViewGroup implements Animator.AnimatorListen
 
     public void setImagePositionY(int positionY) {
         mImagePositionY = positionY;
+    }
+
+    public void setSrcShape(String shape) {
+        int shapeType = SHAPE_NORMAL;
+        if ("circle".equalsIgnoreCase(shape)) {
+            shapeType = SHAPE_CIRCLE;
+        }
+        mShape = shapeType;
+        invalidate();
     }
 
     protected void onFetchImage(String url) {
@@ -403,29 +417,27 @@ public class AsyncImageView extends ViewGroup implements Animator.AnimatorListen
         if (!(mContentDrawable instanceof ContentDrawable)) {
             return;
         }
+        final ContentDrawable contentDrawable = (ContentDrawable) mContentDrawable;
         Bitmap bitmap = getBitmap();
         if (sourceType == SOURCE_TYPE_DEFAULT_SRC && mDefaultSourceDrawable != null
                 && (mUrlFetchState != IMAGE_LOADED || mSourceDrawable == null)) {
             bitmap = mDefaultSourceDrawable.getBitmap();
         }
         if (bitmap != null) {
-            ((ContentDrawable) mContentDrawable).setSourceType(sourceType);
-            ((ContentDrawable) mContentDrawable).setBitmap(bitmap);
-            ((ContentDrawable) mContentDrawable).setTintColor(mTintColor);
-            ((ContentDrawable) mContentDrawable).setScaleType(mScaleType);
-            ((ContentDrawable) mContentDrawable).setImagePositionX(mImagePositionX);
-            ((ContentDrawable) mContentDrawable).setImagePositionY(mImagePositionY);
+            contentDrawable.setSourceType(sourceType);
+            contentDrawable.setBitmap(bitmap);
+            contentDrawable.setTintColor(mTintColor);
+            contentDrawable.setScaleType(mScaleType);
+            contentDrawable.setShape(mShape);
+            contentDrawable.setImagePositionX(mImagePositionX);
+            contentDrawable.setImagePositionY(mImagePositionY);
         }
         if (mBGDrawable != null) {
-            ((ContentDrawable) mContentDrawable)
-                    .setBorder(mBGDrawable.getBorderRadiusArray(),
+            contentDrawable.setBorder(mBGDrawable.getBorderRadiusArray(),
                             mBGDrawable.getBorderWidthArray());
-            ((ContentDrawable) mContentDrawable)
-                    .setShadowOffsetX(mBGDrawable.getShadowOffsetX());
-            ((ContentDrawable) mContentDrawable)
-                    .setShadowOffsetY(mBGDrawable.getShadowOffsetY());
-            ((ContentDrawable) mContentDrawable)
-                    .setShadowRadius(mBGDrawable.getShadowRadius());
+            contentDrawable.setShadowOffsetX(mBGDrawable.getShadowOffsetX());
+            contentDrawable.setShadowOffsetY(mBGDrawable.getShadowOffsetY());
+            contentDrawable.setShadowRadius(mBGDrawable.getShadowRadius());
         }
     }
 

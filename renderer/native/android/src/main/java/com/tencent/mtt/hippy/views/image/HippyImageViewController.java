@@ -139,6 +139,11 @@ public class HippyImageViewController extends HippyViewController<HippyImageView
         }
     }
 
+    @HippyControllerProps(name = "shape", defaultType = HippyControllerProps.STRING)
+    public void setShape(HippyImageView hippyImageView, String shape) {
+        hippyImageView.setSrcShape(shape);
+    }
+
     @SuppressWarnings("unused")
     @HippyControllerProps(name = "onLoad", defaultType = HippyControllerProps.BOOLEAN)
     public void setOnLoad(HippyImageView hippyImageView, boolean enable) {
