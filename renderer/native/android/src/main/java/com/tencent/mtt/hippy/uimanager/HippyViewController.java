@@ -58,9 +58,12 @@ public abstract class HippyViewController<T extends View & HippyViewBase> implem
 
     private static final String TAG = "HippyViewController";
 
+    private static final String FUNC_START_CSS_ANIM = "vl_animation";
+    private static final String FUNC_STOP_CSS_ANIM = "vl_stopAnimation";
     private static final MatrixUtil.MatrixDecompositionContext sMatrixDecompositionContext = new MatrixUtil.MatrixDecompositionContext();
     private static final double[] sTransformDecompositionArray = new double[16];
     private boolean bUserChangeFocus = false;
+    private CssAnimator cssAnimator;
 
     @SuppressWarnings("deprecation")
     public View createView(@Nullable ViewGroup rootView, int id, @NonNull Renderer renderer,
@@ -616,6 +619,18 @@ public abstract class HippyViewController<T extends View & HippyViewBase> implem
 
     public void dispatchFunction(@NonNull T view, @NonNull String functionName,
             @NonNull List params) {
+        if (FUNC_START_CSS_ANIM.equals(functionName)) {
+          cssAnimator = CssAnimator.query(view, params, cssAnimator);
+          CssAnimator animator = cssAnimator;
+            if (animator != null) {
+                animator.start();
+            }
+        } else if (FUNC_STOP_CSS_ANIM.equals(functionName)) {
+            CssAnimator animator = cssAnimator;
+            if (animator != null) {
+                animator.cancel();
+            }
+        }
     }
 
     public void dispatchFunction(@NonNull T view, @NonNull String functionName,

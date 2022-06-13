@@ -34,6 +34,16 @@ public class ArrayUtils {
         return 0;
     }
 
+    public static long getLongValue(@NonNull List<?> params, int index) {
+        if (index < params.size()) {
+            Object element = params.get(index);
+              if (element instanceof Number) {
+                  return ((Number) element).longValue();
+              }
+        }
+        return 0;
+    }
+
     public static float getFloatValue(@NonNull List<?> params, int index) {
         if (index < params.size()) {
             Object element = params.get(index);
@@ -86,4 +96,15 @@ public class ArrayUtils {
         }
         return null;
     }
+
+    public static <T> List<T> getListValue(@NonNull List<?> params, int index) {
+        if (index < params.size()) {
+            Object element = params.get(index);
+            if (element instanceof List) {
+                return ((List) element);
+            }
+        }
+        return null;
+    }
+
 }
