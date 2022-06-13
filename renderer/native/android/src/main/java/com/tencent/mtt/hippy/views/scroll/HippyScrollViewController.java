@@ -28,6 +28,7 @@ public class HippyScrollViewController<T extends ViewGroup & HippyScrollView> ex
     private static final String TAG = "HippyScrollViewController";
     protected static final String SCROLL_TO = "scrollTo";
     private static final String SCROLL_TO_WITHOPTIONS = "scrollToWithOptions";
+    private static final String SCROLL_BY = "scrollBy";
     public static final String CLASS_NAME = "ScrollView";
 
     @Override
@@ -171,6 +172,19 @@ public class HippyScrollViewController<T extends ViewGroup & HippyScrollView> ex
         }
     }
 
+    private void handleScrollBy(@NonNull View view, @NonNull List<?> params) {
+        double dx = ArrayUtils.getDoubleValue(params, 0);
+        double dy = ArrayUtils.getDoubleValue(params, 1);
+        int targetX = Math.round(PixelUtil.dp2px(dx)) + view.getScrollX();
+        int targetY = Math.round(PixelUtil.dp2px(dy)) + view.getScrollY();
+        boolean animated = ArrayUtils.getBooleanValue(params, 2);
+        if (animated) {
+            ((HippyScrollView) view).callSmoothScrollTo(targetX, targetY, 0);
+        } else {
+            view.scrollTo(targetX, targetY);
+        }
+    }
+
     @Override
     public void dispatchFunction(@NonNull View view, @NonNull String functionName,
             @NonNull HippyArray params) {
@@ -190,6 +204,9 @@ public class HippyScrollViewController<T extends ViewGroup & HippyScrollView> ex
                 break;
             case SCROLL_TO_WITHOPTIONS:
                 handleScrollToWithOptions(view, params);
+                break;
+          case SCROLL_BY:
+                handleScrollBy(view, params);
                 break;
             default:
                 LogUtils.e(TAG, "Unknown function name: " + functionName);
