@@ -17,12 +17,11 @@
 package com.tencent.mtt.hippy.views.hippylist;
 
 import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
-
 import static com.tencent.mtt.hippy.uimanager.RenderNode.FLAG_LAZY_LOAD;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.HippyItemTypeHelper;
-import androidx.recyclerview.widget.IItemLayoutParams;
+import androidx.recyclerview.widget.ItemLayoutParams;
 import androidx.recyclerview.widget.RecyclerView.Adapter;
 import androidx.recyclerview.widget.RecyclerView.LayoutParams;
 import android.view.View;
@@ -30,11 +29,13 @@ import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import com.tencent.mtt.hippy.uimanager.DiffUtils;
 import com.tencent.mtt.hippy.uimanager.ListItemRenderNode;
+import com.tencent.mtt.hippy.uimanager.PullFooterRenderNode;
 import com.tencent.mtt.hippy.uimanager.PullHeaderRenderNode;
 import com.tencent.mtt.hippy.uimanager.RenderNode;
 import com.tencent.mtt.hippy.views.list.IRecycleItemTypeChange;
+import com.tencent.mtt.hippy.views.refresh.HippyPullFooterView;
 import com.tencent.mtt.hippy.views.refresh.HippyPullHeaderView;
-import com.tencent.mtt.nxeasy.recyclerview.helper.skikcy.IStickyItemsProvider;
+import com.tencent.mtt.hippy.views.hippylist.recyclerview.helper.skikcy.IStickyItemsProvider;
 import com.tencent.renderer.NativeRender;
 import com.tencent.renderer.NativeRendererManager;
 
@@ -44,13 +45,14 @@ import com.tencent.renderer.NativeRendererManager;
  * 对于特殊的renderNode，比如header和sticky的节点，我们进行了不同的处理。
  */
 public class HippyRecyclerListAdapter<HRCV extends HippyRecyclerView> extends Adapter<HippyRecyclerViewHolder>
-        implements IRecycleItemTypeChange, IStickyItemsProvider, IItemLayoutParams {
+        implements IRecycleItemTypeChange, IStickyItemsProvider, ItemLayoutParams {
 
+    private static final int STICK_ITEM_VIEW_TYPE_BASE = -100000;
     protected final HRCV hippyRecyclerView;
     protected final HippyItemTypeHelper hippyItemTypeHelper;
     protected int positionToCreateHolder;
-    protected PullFooterEventHelper footerEventHelper;
-    protected PullHeaderEventHelper headerEventHelper;
+    protected PullFooterRefreshHelper footerRefreshHelper;
+    protected PullHeaderRefreshHelper headerRefreshHelper;
     protected PreloadHelper preloadHelper;
     @NonNull
     private final NativeRender mNativeRenderer;
@@ -77,9 +79,13 @@ public class HippyRecyclerListAdapter<HRCV extends HippyRecyclerView> extends Ad
         boolean needsDelete = renderNode.needDeleteExistRenderView();
         View renderView = createRenderView(renderNode);
         if (isPullHeader(positionToCreateHolder)) {
-            ((HippyPullHeaderView) renderView).setParentView(hippyRecyclerView);
-            initPullHeadEventHelper((PullHeaderRenderNode) renderNode, renderView);
-            return new HippyRecyclerViewHolder(headerEventHelper.getView(), renderNode);
+            ((HippyPullHeaderView) renderView).setRecyclerView(hippyRecyclerView);
+            initHeaderRefreshHelper(renderView, renderNode);
+            return new HippyRecyclerViewHolder(headerRefreshHelper.getView(), renderNode);
+        } else if (renderView instanceof HippyPullFooterView) {
+            ((HippyPullFooterView) renderView).setRecyclerView(hippyRecyclerView);
+            initFooterRefreshHelper(renderView, renderNode);
+            return new HippyRecyclerViewHolder(footerRefreshHelper.getView(), renderNode);
         } else if (isStickyPosition(positionToCreateHolder)) {
             return new HippyRecyclerViewHolder(getStickyContainer(parent, renderView), renderNode);
         } else {
@@ -159,13 +165,6 @@ public class HippyRecyclerListAdapter<HRCV extends HippyRecyclerView> extends Ad
         return container;
     }
 
-    private void initPullHeadEventHelper(PullHeaderRenderNode renderNode, View renderView) {
-        if (headerEventHelper == null) {
-            headerEventHelper = new PullHeaderEventHelper(hippyRecyclerView, renderNode);
-        }
-        headerEventHelper.setRenderNodeView(renderView);
-    }
-
     @Override
     public String toString() {
         return "HippyRecyclerAdapter: itemCount:" + getItemCount();
@@ -185,33 +184,56 @@ public class HippyRecyclerListAdapter<HRCV extends HippyRecyclerView> extends Ad
         ListItemRenderNode newNode = getChildNodeByAdapterPosition(position);
         oldNode.setLazy(true);
         newNode.setLazy(false);
-        NativeRender nativeRender = NativeRendererManager.getNativeRenderer(hippyRecyclerView.getContext());
-        if (nativeRender != null && oldNode != newNode) {
-            DiffUtils.doDiffAndPatch(nativeRender.getRenderManager().getControllerManager(),
+        if (mNativeRenderer != null && oldNode != newNode) {
+            DiffUtils.doDiffAndPatch(mNativeRenderer.getRenderManager().getControllerManager(),
                     oldNode, newNode);
         }
         newNode.setRecycleItemTypeChangeListener(this);
         hippyRecyclerViewHolder.bindNode = newNode;
-        enablePullFooter(position, hippyRecyclerViewHolder.itemView);
     }
 
-    /**
-     * 检测最后一个item是否是footer，如果是，需要对这个itemView设置监控，footer显示就通知前端加载下一页
-     */
-    private void enablePullFooter(int position, View itemView) {
-        if (position == getItemCount() - 1) {
-            ListItemRenderNode renderNode = getChildNodeByAdapterPosition(position);
-            if (renderNode.isPullFooter()) {
-                if (footerEventHelper == null) {
-                    footerEventHelper = new PullFooterEventHelper(hippyRecyclerView);
-                }
-                footerEventHelper.enableFooter(itemView);
-            } else {
-                if (footerEventHelper != null) {
-                    footerEventHelper.disableFooter();
-                }
-            }
+    public void onFooterRefreshCompleted() {
+        if (footerRefreshHelper != null) {
+            footerRefreshHelper.onRefreshCompleted();
         }
+    }
+
+    public void onFooterDestroy() {
+        if (footerRefreshHelper != null) {
+            footerRefreshHelper.onDestroy();
+        }
+    }
+
+    public void onHeaderRefreshCompleted() {
+        if (headerRefreshHelper != null) {
+            headerRefreshHelper.onRefreshCompleted();
+        }
+    }
+
+    public void onHeaderDestroy() {
+        if (headerRefreshHelper != null) {
+            headerRefreshHelper.onDestroy();
+        }
+    }
+
+    public void enableHeaderRefresh() {
+        if (headerRefreshHelper != null) {
+            headerRefreshHelper.enableRefresh();
+        }
+    }
+
+    private void initHeaderRefreshHelper(View itemView, RenderNode node) {
+        if (headerRefreshHelper == null) {
+            headerRefreshHelper = new PullHeaderRefreshHelper(hippyRecyclerView, node);
+        }
+        headerRefreshHelper.setItemView(itemView);
+    }
+
+    private void initFooterRefreshHelper(View itemView, RenderNode node) {
+        if (footerRefreshHelper == null) {
+            footerRefreshHelper = new PullFooterRefreshHelper(hippyRecyclerView, node);
+        }
+        footerRefreshHelper.setItemView(itemView);
     }
 
     /**
@@ -221,6 +243,9 @@ public class HippyRecyclerListAdapter<HRCV extends HippyRecyclerView> extends Ad
     protected void setLayoutParams(View itemView, int position) {
         LayoutParams childLp = getLayoutParams(itemView);
         RenderNode childNode = getChildNodeByAdapterPosition(position);
+        if (childNode instanceof PullFooterRenderNode || childNode instanceof PullHeaderRenderNode) {
+            return;
+        }
         if (HippyListUtils.isLinearLayout(hippyRecyclerView)) {
             boolean isVertical = HippyListUtils.isVerticalLayout(hippyRecyclerView);
             childLp.height = isVertical ? childNode.getHeight() : MATCH_PARENT;
@@ -250,7 +275,14 @@ public class HippyRecyclerListAdapter<HRCV extends HippyRecyclerView> extends Ad
         //在调用onCreateViewHolder之前，必然会调用getItemViewType，所以这里把position记下来
         //用在onCreateViewHolder的时候来创建View，不然onCreateViewHolder是无法创建RenderNode到View的
         setPositionToCreate(position);
-        return getChildNodeByAdapterPosition(position).getItemViewType();
+        ListItemRenderNode node = getChildNodeByAdapterPosition(position);
+        if (node == null) {
+            return 0;
+        }
+        if (node.shouldSticky()) {
+            return STICK_ITEM_VIEW_TYPE_BASE - position;
+        }
+        return node.getItemViewType();
     }
 
     protected void setPositionToCreate(int position) {
@@ -326,8 +358,15 @@ public class HippyRecyclerListAdapter<HRCV extends HippyRecyclerView> extends Ad
         ListItemRenderNode childNode = getChildNode(position);
         if (childNode != null) {
             if (childNode.isPullHeader()) {
-                if (headerEventHelper != null) {
-                    return headerEventHelper.getVisibleHeight();
+                if (headerRefreshHelper != null) {
+                    return headerRefreshHelper.getVisibleHeight();
+                }
+
+                return 0;
+            }
+            if (childNode.isPullFooter()) {
+                if (footerRefreshHelper != null) {
+                    return footerRefreshHelper.getVisibleHeight();
                 }
 
                 return 0;
@@ -348,6 +387,20 @@ public class HippyRecyclerListAdapter<HRCV extends HippyRecyclerView> extends Ad
     public int getRenderNodeWidth(int position) {
         ListItemRenderNode childNode = getChildNode(position);
         if (childNode != null) {
+            if (childNode.isPullHeader()) {
+                if (headerRefreshHelper != null) {
+                    return headerRefreshHelper.getVisibleWidth();
+                }
+
+                return 0;
+            }
+            if (childNode.isPullFooter()) {
+                if (footerRefreshHelper != null) {
+                    return footerRefreshHelper.getVisibleWidth();
+                }
+
+                return 0;
+            }
             return childNode.getWidth();
         }
         return 0;
@@ -390,22 +443,6 @@ public class HippyRecyclerListAdapter<HRCV extends HippyRecyclerView> extends Ad
             return getChildNodeByAdapterPosition(0).isPullHeader();
         }
         return false;
-    }
-
-    public void resetPullHeaderPositionIfNeeded(int offsetY) {
-        if (offsetY == 0) {
-            ListItemRenderNode renderNode = getChildNodeByAdapterPosition(0);
-            if (renderNode != null && renderNode.isPullHeader()) {
-                headerEventHelper.resetPullHeaderPositionIfNeeded();
-            }
-        }
-    }
-
-    /**
-     * 获取下拉刷新的事件辅助器
-     */
-    public PullHeaderEventHelper getHeaderEventHelper() {
-        return headerEventHelper;
     }
 
     public PreloadHelper getPreloadHelper() {

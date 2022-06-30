@@ -22,8 +22,8 @@ import static androidx.recyclerview.widget.RecyclerView.SCROLL_STATE_SETTLING;
 
 import android.graphics.Rect;
 import androidx.annotation.NonNull;
-import androidx.recyclerview.widget.OverPullHelper;
-import androidx.recyclerview.widget.OverPullListener;
+import androidx.recyclerview.widget.HippyOverPullHelper;
+import androidx.recyclerview.widget.HippyOverPullListener;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.recyclerview.widget.RecyclerView.OnScrollListener;
 import android.view.View;
@@ -37,7 +37,6 @@ import com.tencent.mtt.hippy.uimanager.HippyViewEvent;
 import com.tencent.mtt.hippy.utils.LogUtils;
 import com.tencent.mtt.hippy.utils.PixelUtil;
 import com.tencent.mtt.hippy.views.list.HippyListItemView;
-import com.tencent.mtt.hippy.views.scroll.HippyScrollViewEventHelper;
 import com.tencent.renderer.utils.EventUtils;
 
 /**
@@ -45,7 +44,7 @@ import com.tencent.renderer.utils.EventUtils;
  * 各种事件的通知，通知前端view的曝光事件，用于前端的统计上报
  */
 public class RecyclerViewEventHelper extends OnScrollListener implements OnLayoutChangeListener,
-        OnAttachStateChangeListener, OverPullListener {
+        OnAttachStateChangeListener, HippyOverPullListener {
 
     protected final HippyRecyclerView hippyRecyclerView;
     private boolean scrollBeginDragEventEnable;
@@ -92,7 +91,7 @@ public class RecyclerViewEventHelper extends OnScrollListener implements OnLayou
             hippyRecyclerView.post(new Runnable() {
                 @Override
                 public void run() {
-                    EventUtils.send(getParentView(), EventUtils.EVENT_RECYCLER_LIST_READY, null);
+                    EventUtils.sendComponentEvent(getParentView(), EventUtils.EVENT_RECYCLER_LIST_READY, null);
                 }
             });
         }
@@ -139,7 +138,7 @@ public class RecyclerViewEventHelper extends OnScrollListener implements OnLayou
 
     protected HippyViewEvent getOnScrollDragStartedEvent() {
         if (onScrollDragStartedEvent == null) {
-            onScrollDragStartedEvent = new HippyViewEvent(HippyScrollViewEventHelper.EVENT_TYPE_BEGIN_DRAG);
+            onScrollDragStartedEvent = new HippyViewEvent(EventUtils.EVENT_SCROLLER_BEGIN_DRAG);
         }
         return onScrollDragStartedEvent;
     }
@@ -147,7 +146,7 @@ public class RecyclerViewEventHelper extends OnScrollListener implements OnLayou
     // scroll
     protected HippyViewEvent getOnScrollEvent() {
         if (onScrollEvent == null) {
-            onScrollEvent = new HippyViewEvent(HippyScrollViewEventHelper.EVENT_TYPE_SCROLL);
+            onScrollEvent = new HippyViewEvent(EventUtils.EVENT_SCROLLER_ON_SCROLL);
         }
         return onScrollEvent;
     }
@@ -155,7 +154,7 @@ public class RecyclerViewEventHelper extends OnScrollListener implements OnLayou
     // start fling
     protected HippyViewEvent getOnScrollFlingStartedEvent() {
         if (onScrollFlingStartedEvent == null) {
-            onScrollFlingStartedEvent = new HippyViewEvent(HippyScrollViewEventHelper.EVENT_TYPE_MOMENTUM_BEGIN);
+            onScrollFlingStartedEvent = new HippyViewEvent(EventUtils.EVENT_SCROLLER_MOMENTUM_BEGIN);
         }
         return onScrollFlingStartedEvent;
     }
@@ -163,7 +162,7 @@ public class RecyclerViewEventHelper extends OnScrollListener implements OnLayou
     // end drag event
     protected HippyViewEvent getOnScrollDragEndedEvent() {
         if (onScrollDragEndedEvent == null) {
-            onScrollDragEndedEvent = new HippyViewEvent(HippyScrollViewEventHelper.EVENT_TYPE_END_DRAG);
+            onScrollDragEndedEvent = new HippyViewEvent(EventUtils.EVENT_SCROLLER_END_DRAG);
         }
         return onScrollDragEndedEvent;
     }
@@ -225,7 +224,8 @@ public class RecyclerViewEventHelper extends OnScrollListener implements OnLayou
     }
 
     protected void sendOnReachedEvent() {
-        EventUtils.send(getParentView(), EventUtils.EVENT_RECYCLER_END_REACHED, null);
+        EventUtils.sendComponentEvent(getParentView(), EventUtils.EVENT_RECYCLER_END_REACHED, null);
+        EventUtils.sendComponentEvent(getParentView(), EventUtils.EVENT_RECYCLER_LOAD_MORE, null);
     }
 
     protected void checkSendOnScrollEvent() {
@@ -281,7 +281,7 @@ public class RecyclerViewEventHelper extends OnScrollListener implements OnLayou
     // end fling
     protected HippyViewEvent getOnScrollFlingEndedEvent() {
         if (onScrollFlingEndedEvent == null) {
-            onScrollFlingEndedEvent = new HippyViewEvent(HippyScrollViewEventHelper.EVENT_TYPE_MOMENTUM_END);
+            onScrollFlingEndedEvent = new HippyViewEvent(EventUtils.EVENT_SCROLLER_MOMENTUM_END);
         }
         return onScrollFlingEndedEvent;
     }
@@ -385,19 +385,19 @@ public class RecyclerViewEventHelper extends OnScrollListener implements OnLayou
     @Override
     public void onOverPullStateChanged(int oldState, int newState, int offset) {
         LogUtils.d("QBRecyclerViewEventHelper", "oldState:" + oldState + ",newState:" + newState);
-        if (oldState == OverPullHelper.OVER_PULL_NONE && (isOverPulling(newState)
-                || newState == OverPullHelper.OVER_PULL_NORMAL)) {
+        if (oldState == HippyOverPullHelper.OVER_PULL_NONE && (isOverPulling(newState)
+                || newState == HippyOverPullHelper.OVER_PULL_NORMAL)) {
             getOnScrollDragStartedEvent().send(getParentView(), generateScrollEvent());
         }
         if (isOverPulling(oldState) && isOverPulling(newState)) {
             sendOnScrollEvent();
         }
-        if (newState == OverPullHelper.OVER_PULL_SETTLING && oldState != OverPullHelper.OVER_PULL_SETTLING) {
+        if (newState == HippyOverPullHelper.OVER_PULL_SETTLING && oldState != HippyOverPullHelper.OVER_PULL_SETTLING) {
             getOnScrollDragEndedEvent().send(getParentView(), generateScrollEvent());
         }
     }
 
     private boolean isOverPulling(int newState) {
-        return newState == OverPullHelper.OVER_PULL_DOWN_ING || newState == OverPullHelper.OVER_PULL_UP_ING;
+        return newState == HippyOverPullHelper.OVER_PULL_DOWN_ING || newState == HippyOverPullHelper.OVER_PULL_UP_ING;
     }
 }

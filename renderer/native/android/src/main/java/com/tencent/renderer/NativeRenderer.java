@@ -43,6 +43,7 @@ import com.tencent.renderer.component.text.VirtualNodeManager;
 
 import com.tencent.renderer.utils.DisplayUtils;
 
+import com.tencent.renderer.utils.EventUtils.EventType;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
@@ -59,7 +60,8 @@ import com.tencent.mtt.hippy.uimanager.RenderManager;
 import com.tencent.renderer.utils.FlexUtils;
 import com.tencent.renderer.utils.FlexUtils.FlexMeasureMode;
 
-public class NativeRenderer extends Renderer implements NativeRender, NativeRenderProxy, NativeRenderDelegate {
+public class NativeRenderer extends Renderer implements NativeRender, NativeRenderProxy,
+        NativeRenderDelegate {
 
     private static final String TAG = "NativeRenderer";
     private static final String NODE_ID = "id";
@@ -229,6 +231,22 @@ public class NativeRenderer extends Renderer implements NativeRender, NativeRend
     }
 
     @Override
+    public void onJSBridgeInitialized() {
+        UIThreadUtils.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (mRootView != null) {
+                    final int width = mRootView.getWidth();
+                    final int height = mRootView.getHeight();
+                    if (width > 0 && height > 0) {
+                        onSizeChanged(width, height);
+                    }
+                }
+            }
+        });
+    }
+
+    @Override
     public void onSizeChanged(int w, int h) {
         mRenderProvider.onSizeChanged(w, h);
     }
@@ -250,48 +268,22 @@ public class NativeRenderer extends Renderer implements NativeRender, NativeRend
     /**
      * Dispatch UI component event, such as onLayout, onScroll, onInitialListReady.
      *
-     * @param id target node id
+     * @param rootId root node id
+     * @param nodeId target node id
      * @param eventName target event name
      * @param params event extra params object
+     * @param eventType event type {@link EventType}
      */
     @Override
-    public void dispatchUIComponentEvent(int id, String eventName, @Nullable Object params) {
-        if (mRenderManager.hasEventRegistered(id, eventName)) {
-            // UI component event default disable capture and bubble phase,
-            // can not enable both in native and js.
-            mRenderProvider.dispatchEvent(id, eventName, params, false, false);
+    public void dispatchEvent(int rootId, int nodeId, @NonNull String eventName,
+            @Nullable Object params, boolean useCapture, boolean useBubble, EventType eventType) {
+        // Because the native(C++) DOM use lowercase names, convert to lowercase here before call JNI.
+        String lowerCaseEventName = eventName.toLowerCase();
+        if (eventType != EventType.EVENT_TYPE_GESTURE && !mRenderManager.checkRegisteredEvent(rootId,
+                nodeId, lowerCaseEventName)) {
+            return;
         }
-    }
-
-    /**
-     * Dispatch gesture event, such as onClick, onLongClick, onPressIn, onPressOut, onTouchDown,
-     * onTouchMove, onTouchEnd, onTouchCancel.
-     *
-     * @param id target node id
-     * @param eventName target event name
-     * @param params event extra params object
-     */
-    @Override
-    public void dispatchNativeGestureEvent(int id, String eventName, @Nullable Object params) {
-        // Gesture event default enable capture and bubble phase, can not disable in native,
-        // but can stop propagation in js.
-        mRenderProvider.dispatchEvent(id, eventName, params, true, true);
-    }
-
-    /**
-     * Dispatch custom event which capture and bubble state can set by user
-     *
-     * @param id target node id
-     * @param eventName target event name
-     * @param params event extra params object
-     * @param useCapture enable event capture
-     * @param useBubble enable event bubble
-     */
-    @Override
-    @SuppressWarnings("unused")
-    public void dispatchCustomEvent(int id, String eventName, @Nullable Object params,
-            boolean useCapture, boolean useBubble) {
-        mRenderProvider.dispatchEvent(id, eventName, params, useCapture, useBubble);
+        mRenderProvider.dispatchEvent(rootId, nodeId, lowerCaseEventName, params, useCapture, useBubble);
     }
 
     @Override
@@ -367,10 +359,9 @@ public class NativeRenderer extends Renderer implements NativeRender, NativeRend
             element = node.get(NODE_PROPS);
             final Map<String, Object> props =
                     (element instanceof HashMap) ? (Map) element : new HashMap<String, Object>();
-            // Props may reset by framework modules, such as js AnimationModule,
-            // key={animationId=xxx} => key=value
-            onCreateNode(nodeId, className, props);
-            mVirtualNodeManager.createNode(nodeId, nodePid, nodeIndex, className, props);
+            onCreateNode(nodeId, className);
+            mVirtualNodeManager.createNode(mRootView.getId(), nodeId, nodePid, nodeIndex, className,
+                    props);
             if (mVirtualNodeManager.hasVirtualParent(nodeId)) {
                 // If the node has a virtual parent, no need to create corresponding render node,
                 // so don't add create task to the ui task queue.
@@ -415,9 +406,6 @@ public class NativeRenderer extends Renderer implements NativeRender, NativeRend
             element = node.get(NODE_PROPS);
             final Map<String, Object> props =
                     (element instanceof HashMap) ? (Map) element : new HashMap<String, Object>();
-            // Props may reset by framework modules, such as js AnimationModule,
-            // key={animationId=xxx} => key=value
-            onUpdateNode(nodeId, props);
             mVirtualNodeManager.updateNode(nodeId, props);
             if (mVirtualNodeManager.hasVirtualParent(nodeId)) {
                 // If the node has a virtual parent, no corresponding render node exists,
@@ -450,7 +438,6 @@ public class NativeRenderer extends Renderer implements NativeRender, NativeRend
                 mVirtualNodeManager.deleteNode(id);
                 continue;
             }
-            onDeleteNode(id);
             mVirtualNodeManager.deleteNode(id);
             UITaskExecutor task = new UITaskExecutor() {
                 @Override
@@ -659,18 +646,17 @@ public class NativeRenderer extends Renderer implements NativeRender, NativeRend
         };
         addUITask(task);
         executeUITask();
-        onEndBatch();
     }
 
     @Override
     @Nullable
-    public VirtualNode createVirtualNode(int id, int pid, int index, @NonNull String className,
+    public VirtualNode createVirtualNode(int rootId, int id, int pid, int index,
+            @NonNull String className,
             @Nullable Map<String, Object> props) {
-        return mRenderManager.createVirtualNode(id, pid, index, className, props);
+        return mRenderManager.createVirtualNode(rootId, id, pid, index, className, props);
     }
 
-    private void onCreateNode(int nodeId, @NonNull String className,
-            @NonNull final Map<String, Object> props) {
+    private void onCreateNode(int nodeId, @NonNull String className) {
         // If this node is a modal type, should update node size with window width and height
         // before layout.
         if (className.equals(HippyModalHostManager.CLASS_NAME)) {
@@ -679,27 +665,6 @@ public class NativeRenderer extends Renderer implements NativeRender, NativeRend
                 mRenderProvider
                         .onSizeChanged(nodeId, metrics.widthPixels, metrics.heightPixels, true);
             }
-        }
-        if (checkJSFrameworkProxy()) {
-            ((JSFrameworkProxy) mFrameworkProxy).onCreateNode(nodeId, props);
-        }
-    }
-
-    private void onUpdateNode(int nodeId, @NonNull final Map<String, Object> props) {
-        if (checkJSFrameworkProxy()) {
-            ((JSFrameworkProxy) mFrameworkProxy).onUpdateNode(nodeId, props);
-        }
-    }
-
-    private void onDeleteNode(int nodeId) {
-        if (checkJSFrameworkProxy()) {
-            ((JSFrameworkProxy) mFrameworkProxy).onDeleteNode(nodeId);
-        }
-    }
-
-    private void onEndBatch() {
-        if (checkJSFrameworkProxy()) {
-            ((JSFrameworkProxy) mFrameworkProxy).onEndBatch();
         }
     }
 

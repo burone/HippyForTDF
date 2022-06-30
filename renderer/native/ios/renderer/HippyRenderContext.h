@@ -22,9 +22,10 @@
 
 #import <Foundation/Foundation.h>
 #import "HippyFrameworkProxy.h"
+#import "UIView+Render.h"
+#import "dom/dom_manager.h"
 
 NS_ASSUME_NONNULL_BEGIN
-
 
 @class HippyViewManager;
 @class HippyShadowView;
@@ -38,20 +39,27 @@ typedef void (^HippyViewUpdateCompletedBlock)(id<HippyRenderContext> renderConte
 
 @property(nonatomic, readonly) NSDictionary<NSNumber *, __kindof UIView *> *viewRegistry;
 
+@property(nonatomic, readonly) std::weak_ptr<hippy::DomManager> domManager;
+
 @property(nonatomic, weak) id<HippyFrameworkProxy> frameworkProxy;
+
+- (void)registerRootView:(UIView *)rootView;
 
 - (__kindof HippyViewManager *)renderViewManagerForViewName:(NSString *)viewName;
 
 - (__kindof UIView *)viewFromRenderViewTag:(NSNumber *)hippyTag;
 
-//TODO Use a render view protocol instead of HippyShadowView in the future
 - (__kindof UIView *)createViewRecursivelyFromShadowView:(HippyShadowView *)shadowView;
+
+- (void)purgeViewsFromHippyTags:(NSArray<NSNumber *> *)hippyTag;
 
 - (void)addUIBlock:(HippyRenderUIBlock)block;
 
 - (void)executeBlockOnRenderQueue:(dispatch_block_t)block;
 
 - (void)updateView:(NSNumber *)hippyTag props:(NSDictionary *)pros;
+
+- (void)setFrame:(CGRect)frame forView:(UIView *)view;
 
 - (void)setNeedsLayout;
 

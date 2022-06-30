@@ -81,6 +81,23 @@ namespace hippy {
 }  // namespace hippy
 `,
   },
+  flutter: {
+    piece1: `
+}  // namespace
+
+namespace hippy {
+  static const std::unordered_map<std::string, NativeSourceCode> global_base_js_source_map{
+    {"bootstrap.js", {k_bootstrap, arraysize(k_bootstrap) - 1}},  // NOLINT
+    {"hippy.js", {k_hippy, arraysize(k_hippy) - 1}},  // NOLINT`,
+    piece2: `
+  };
+  const NativeSourceCode GetNativeSourceCode(const std::string& filename) {
+    const auto it = global_base_js_source_map.find(filename);
+    return it != global_base_js_source_map.cend() ? it->second : NativeSourceCode{};
+  }
+}  // namespace hippy
+`,
+  },
 };
 
 /**
@@ -114,18 +131,18 @@ function getAbsolutePath(relativePath) {
 function getAllRequiredFiles(platform) {
   return new Promise((resole) => {
     const rl = readline.createInterface({
-      input: fs.createReadStream(getAbsolutePath(`../framework/js/core/js/entry/${platform}/hippy.js`)),
+      input: fs.createReadStream(getAbsolutePath(`../driver/js/core/js/entry/${platform}/hippy.js`)),
     });
     const filePaths = [
-      getAbsolutePath('../framework/js/core/js/bootstrap.js'),
-      getAbsolutePath(`../framework/js/core/js/entry/${platform}/hippy.js`),
-      getAbsolutePath('../framework/js/core/js/modules/ExceptionHandle.js'),
+      getAbsolutePath('../driver/js/core/js/bootstrap.js'),
+      getAbsolutePath(`../driver/js/core/js/entry/${platform}/hippy.js`),
+      getAbsolutePath('../driver/js/core/js/modules/ExceptionHandle.js'),
     ];
 
     rl.on('line', (line) => {
       if (line.split('//')[0].indexOf('require') > -1) {
         const entry = line.split('(\'')[1].split('\')')[0];
-        filePaths.push(getAbsolutePath(`../framework/js/core/js/entry/${platform}/${entry}`));
+        filePaths.push(getAbsolutePath(`../driver/js/core/js/entry/${platform}/${entry}`));
       }
     });
     rl.on('close', () => {
@@ -149,6 +166,9 @@ function readFileToBuffer(platform, filePath) {
       const code = fs.readFileSync(filePath).toString();
       const compiled = babel.transform(code, iOSBabelConfig);
       return Buffer.from(compiled.code);
+    }
+    case 'flutter': {
+      return fs.readFileSync(filePath);
     }
     default:
       return null;
@@ -205,5 +225,6 @@ function generateCpp(platform, buildDirPath) {
 }
 
 // Start to work
-generateCpp('ios', getAbsolutePath('../ios/sdk/base/'));
-generateCpp('android', getAbsolutePath('../framework/js/android/src/main/jni/src/bridge/'));
+generateCpp('ios', getAbsolutePath('../driver/js/ios/base'));
+generateCpp('android', getAbsolutePath('../driver/js/android/src/main/jni/src/bridge/'));
+generateCpp('flutter', getAbsolutePath('../driver/js/flutter/core/src/bridge/'));

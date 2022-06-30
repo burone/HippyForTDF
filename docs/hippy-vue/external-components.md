@@ -2,13 +2,13 @@
 
 # 终端扩展组件
 
-扩展组件是终端提供了一些很方便的组件，在 hippy-vue 中由 [@hippy/vue-native-components](//www.npmjs.com/package/@hippy/vue-native-components) 提供，但因为暂时还没有 `@hippy/vue-web-components` 所以暂时无法在浏览器中使用。
+扩展组件是终端提供了一些很方便的组件，在 hippy-vue 中由 [@hippy/vue-native-components](//www.npmjs.com/package/@hippy/vue-native-components) 提供
 
 ---
 
 # animation
 
-[[范例：demo-animation.vue]](//github.com/Tencent/Hippy/blob/master/framework/js/examples/hippy-vue-demo/src/components/native-demos/demo-animation.vue)
+[[范例：demo-animation.vue]](//github.com/Tencent/Hippy/blob/master/examples/hippy-vue-demo/src/components/native-demos/demo-animation.vue)
 
 该组件是 hippy-vue 的动画解决方案，直接传入一个样式值和动画方案数组，即可触发动作效果。
 
@@ -22,27 +22,100 @@
 | actions*        | 动画方案，其实是一个样式值跟上它的动画方案，详情请参考范例。 | Object                                | `Android、iOS`    |
 
 * actions 详解
-  
-  和 React 不同，它将单个动画 Animation 和动画序列 AnimationSet 合二为一了，其实方法特别简单，发现是个对象就是 Animation，如果是个数组就是动画序列就用 AnimationSet 处理，单个动画参数具体参考 [Animation 模块](../hippy-react/modules.md?id=animation)和 [范例](https://github.com/Tencent/Hippy/tree/master/framework/js/examples/hippy-vue-demo/src/components/native-demos/animations)。需要说明 hippy-vue 的动画参数有一些[默认值](https://github.com/Tencent/Hippy/blob/master/packages/hippy-vue-native-components/src/animation.js#L5)，只有差异部分才需要填写。循环播放参数 `repeatCount: 'loop'` 在 `2.12.2` 及以上版本支持，低版本请使用 `repeatCount: -1`。
 
-  特别说明，对 actions 替换后会自动新建动画，需手动启动新动画。有两种处理方式：
-  * 替换 actions => 延迟一定时间后（如setTimeout） 调用 `this.[animation ref].start()`（推荐）
-  * `playing = false` =>  替换 actions =>  延迟一定时间后（如setTimeout） `playing = true`
-  
-  2.6.0 版本新增 `backgroundColor` 背景色渐变动画支持，参考 [渐变色动画DEMO](https://github.com/Tencent/Hippy/blob/master/framework/js/examples/hippy-vue-demo/src/components/native-demos/animations/color-change.vue)
-  * 设置 `actions` 对 `backgroundColor` 进行修饰
-  * 设置 `valueType` 为 `color`
-  * 设置 `startValue` 和 `toValue` 为 [color值](style/color.md)
+  和 HippyReact 不同，HippyVue 将单个动画 Animation 和动画序列 AnimationSet 合二为一，如果是一个对象，就使用 Animation 处理，如果是数组动画序列就用 AnimationSet 处理。动画参数具体可参考 [HippyReact Animation 模块](../hippy-react/modules.md?id=animation) 和 [范例](https://github.com/Tencent/Hippy/tree/master/examples/hippy-vue-demo/src/components/native-demos/animations)。
+
+```vue
+<template>
+  <div>
+    <animation
+        ref="animationRef"
+        :actions="actionsConfig"
+        :playing="true"
+        @start="animationStart"
+        @end="animationEnd"
+        @repeat="animationRepeat"
+        @cancel="animationCancel"
+        @actionsDidUpdate="actionsDidUpdate"
+    />
+  </div>
+</template>
+<script>
+export default {
+  data() {
+    return {
+      actionsConfig: {
+        // AnimationSet
+        top: [
+          {
+            startValue: 14,
+            toValue: 8,
+            duration: 125, // 动画持续时间
+          },
+          {
+            startValue: 8,
+            toValue: 14,
+            duration: 250,
+            timingFunction: 'linear', // 动画插值器类型，可选 linear、ease-in、ease-out、ease-in-out、cubic-bezier(最低支持版本 2.9.0)
+            delay: 750, // 动画延迟开始的时间，单位为毫秒
+            repeatCount: -1, // 动画的重复次数，0 为不重复，-1('loop') 为重复播放，如果在数组中，整个动画数组的重复次数以最后一个动画的值为准
+          },
+        ],
+        transform: {
+          // 单个 Animation
+          rotate: {
+              startValue: 0,
+              toValue: 90,
+              duration: 250,
+              timingFunction: 'linear',
+              valueType: 'deg',  // 动画的开始和结束值的单位类型，默认为 undefined, 可设为 rad、deg、color
+            },
+        },
+      },
+    };
+  },
+  methods: {
+    animationStart() {
+      console.log('animation-start callback');
+    },
+    animationEnd() {
+      console.log('animation-end callback');
+    },
+    animationRepeat() {
+      console.log('animation-repeat callback');
+    },
+    animationCancel() {
+      console.log('animation-cancel callback');
+    },
+    actionsDidUpdate() {
+      this.animationRef.start();
+    }
+  },
+};
+</script>
+```
+
+> 特别说明，对 actions 替换后会重新创建动画，需手动启动新动画。有两种处理方式：
+>
+> * 替换 actions => 延迟一定时间（如setTimeout）后 或者在 `actionsDidUpdate` 勾子内 `(2.14.0 版本后支持)`，调用 `this.[animation ref].start()`（推荐）
+> * 设置 `playing = false` =>  替换 actions  => 延迟一定时间（如setTimeout）后 或者在 `actionsDidUpdate` 勾子内 `(2.14.0 版本后支持)`，设置 `playing = true`
+
+> `2.12.2` 及以上版本支持循环播放参数 `repeatCount: 'loop'` 写法，低版本请使用 `repeatCount: -1`
+
+> `2.6.0` 及以上版本支持 `backgroundColor` 背景色渐变动画，参考 [渐变色动画DEMO](https://github.com/Tencent/Hippy/blob/master/examples/hippy-vue-demo/src/components/native-demos/animations/color-change.vue)
+>
+> * 设置 `actions` 对 `backgroundColor` 进行修饰
+> * 设置 `valueType` 为 `color`
+> * 设置 `startValue` 和 `toValue` 为 [color值](style/color.md)
 
 ## 事件
 
-> 最低支持版本 2.5.2
-
 | 参数          | 描述                                                         | 类型                                      | 支持平台 |
 | ------------- | ------------------------------------------------------------ | ----------------------------------------- | -------- |
-| start              | 动画开始时触发                                                            | `Function`                                                    | `Android、iOS`    |
-| end         | 动画结束时触发                                                            | `Function`| `Android、iOS`    |
-| repeat | 每次循环播放时触发                                                            | `Function` | `Android`   |
+| start              | 动画开始时触发，最低支持版本 `2.5.2`      | `Function`                                                    | `Android、iOS`    |
+| end         | 动画结束时触发，最低支持版本 `2.5.2`             | `Function`| `Android、iOS`    |
+| repeat | 每次循环播放时触发，最低支持版本 `2.5.2`               | `Function` | `Android`   |
+| actionsDidUpdate | 替换 actions 且动画对象创建成功后触发，可以在这个时机重新启动动画，最低支持版本 `2.14.0`  | `Function` | `Android、iOS`   |
 
 ## 方法
 
@@ -76,7 +149,7 @@
 
 # dialog
 
-[[范例：demo-dialog.vue]](//github.com/Tencent/Hippy/blob/master/framework/js/examples/hippy-vue-demo/src/components/native-demos/demo-dialog.vue)
+[[范例：demo-dialog.vue]](//github.com/Tencent/Hippy/blob/master/examples/hippy-vue-demo/src/components/native-demos/demo-dialog.vue)
 
 用于模态弹窗，默认透明背景色，需要加一个带背景色的 `<div>` 填充。
 
@@ -102,7 +175,7 @@
 
 # swiper
 
-[[范例：demo-swiper.vue]](//github.com/Tencent/Hippy/blob/master/framework/js/examples/hippy-vue-demo/src/components/native-demos/demo-swiper.vue)
+[[范例：demo-swiper.vue]](//github.com/Tencent/Hippy/blob/master/examples/hippy-vue-demo/src/components/native-demos/demo-swiper.vue)
 
 支持翻页的容器，它的每一个子容器组件会被视作一个单独的页面，对应终端 `ViewPager`组件， 里面只能包含 `<swiper-slide>` 组件。
 
@@ -134,7 +207,7 @@
 
 # swiper-slide
 
-[[范例：demo-swiper.vue]](//github.com/Tencent/Hippy/blob/master/framework/js/examples/hippy-vue-demo/src/components/native-demos/demo-swiper.vue)
+[[范例：demo-swiper.vue]](//github.com/Tencent/Hippy/blob/master/examples/hippy-vue-demo/src/components/native-demos/demo-swiper.vue)
 
 翻页子容器组件容器。
 
@@ -142,7 +215,7 @@
 
 # pull-header
 
-[[范例：demo-pull-header.vue]](//github.com/Tencent/Hippy/blob/master/framework/js/examples/hippy-vue-demo/src/components/native-demos/demo-pull-header.vue)
+[[范例：demo-pull-header.vue]](//github.com/Tencent/Hippy/blob/master/examples/hippy-vue-demo/src/components/native-demos/demo-pull-header.vue)
 
 下拉刷新组件，嵌套在 `ul` 中作为第一个子元素使用
 
@@ -164,7 +237,7 @@
 
 # pull-footer
 
-[[范例：demo-pull-footer.vue]](//github.com/Tencent/Hippy/blob/master/framework/js/examples/hippy-vue-demo/src/components/native-demos/demo-pull-footer.vue)
+[[范例：demo-pull-footer.vue]](//github.com/Tencent/Hippy/blob/master/examples/hippy-vue-demo/src/components/native-demos/demo-pull-footer.vue)
 
 上拉刷新组件，嵌套在 `ul` 中作为最后一个子元素使用
 
@@ -174,7 +247,7 @@
 | ------------- | ------------------------------------------------------------ | ----------------------------------------- | -------- |
 | idle                | 滑动距离在 pull-footer 区域内触发一次，参数 contentOffset                            | `Function`                                                   | `Android、iOS`    |
 | pulling   | 滑动距离超出 pull-footer 后触发一次，参数 contentOffset      | `Function`   | `Android、iOS`    |
-| refresh   | 滑动超出距离，松手后触发一次          | `Function`   | `Android、iOS`    |
+| released   | 滑动超出距离松手后触发一次          | `Function`   | `Android、iOS`    |
 
 ## 方法
 
@@ -188,7 +261,7 @@
 
 > 最低支持版本 2.9.0
 
-[[范例：demo-waterfall]](//github.com/Tencent/Hippy/blob/master/framework/js/examples/hippy-vue-demo/src/components/native-demos/demo-waterfall.vue)
+[[范例：demo-waterfall]](//github.com/Tencent/Hippy/blob/master/examples/hippy-vue-demo/src/components/native-demos/demo-waterfall.vue)
 
 瀑布流组件，子元素必须是 `waterfall-item` ，瀑布流组件下拉刷新需在最外层用`ul-refresh-wrapper`， 可在`waterfall` 内用 `pull-footer` 展示上拉加载文案。
 

@@ -44,16 +44,22 @@ class _ScrollViewWidgetState extends FRState<ScrollViewWidget> {
       value: widget._viewModel,
       child: Selector<ScrollViewRenderViewModel, ScrollViewRenderViewModel>(
         selector: (context, viewModel) {
-          return ScrollViewRenderViewModel.copy(viewModel.id, viewModel.rootId,
-              viewModel.name, viewModel.context, viewModel);
+          return ScrollViewRenderViewModel.copy(
+            viewModel.id,
+            viewModel.rootId,
+            viewModel.name,
+            viewModel.context,
+            viewModel,
+          );
         },
         builder: (context, viewModel, _) {
-          return PositionWidget(viewModel,
-              child: Selector0<ScrollViewDetailRenderViewModel>(
-                selector: (context) =>
-                    viewModel.scrollViewDetailRenderViewModel,
-                builder: (context, viewModel, _) => scrollView(viewModel),
-              ));
+          return PositionWidget(
+            viewModel,
+            child: Selector0<ScrollViewDetailRenderViewModel>(
+              selector: (context) => viewModel.scrollViewDetailRenderViewModel,
+              builder: (context, viewModel, _) => scrollView(viewModel),
+            ),
+          );
         },
       ),
     );
@@ -63,20 +69,21 @@ class _ScrollViewWidgetState extends FRState<ScrollViewWidget> {
     if (widgetModel.children.isEmpty) {
       return Container();
     }
-    ScrollPhysics physics = BouncingScrollPhysics();
+    ScrollPhysics physics = const BouncingScrollPhysics();
     if (!widgetModel.bounces) {
-      physics = ClampingScrollPhysics();
+      physics = const ClampingScrollPhysics();
     }
 
     if (!(widgetModel.scrollGestureDispatcher.enableScroll == true)) {
-      physics = NeverScrollableScrollPhysics();
+      physics = const NeverScrollableScrollPhysics();
     } else {
       if (widgetModel.pagingEnable) {
-        physics = PageScrollPhysics().applyTo(BouncingScrollPhysics());
+        physics =
+            const PageScrollPhysics().applyTo(const BouncingScrollPhysics());
         if (!widgetModel.bounces) {
-          physics = PageScrollPhysics().applyTo(ClampingScrollPhysics());
+          physics =
+              const PageScrollPhysics().applyTo(const ClampingScrollPhysics());
         }
-
       }
     }
     var direction = Axis.vertical;
@@ -111,10 +118,11 @@ class _ScrollViewWidgetState extends FRState<ScrollViewWidget> {
     }
 
     return ScrollNotificationListener(
-        child: scrollBar,
-        scrollGestureDispatcher: widgetModel.scrollGestureDispatcher,
-        isHorizontal: widgetModel.isHorizontal,
-        viewModel: viewModel());
+      child: scrollBar,
+      scrollGestureDispatcher: widgetModel.scrollGestureDispatcher,
+      isHorizontal: widgetModel.isHorizontal,
+      viewModel: viewModel(),
+    );
   }
 
   RenderViewModel viewModel() {
@@ -136,11 +144,12 @@ class ScrollNotificationListener extends StatefulWidget {
   final bool isHorizontal;
   final RenderViewModel viewModel;
 
-  ScrollNotificationListener(
-      {required this.scrollGestureDispatcher,
-      required this.child,
-      this.isHorizontal = false,
-      required this.viewModel});
+  ScrollNotificationListener({
+    required this.scrollGestureDispatcher,
+    required this.child,
+    this.isHorizontal = false,
+    required this.viewModel,
+  });
 
   @override
   State<StatefulWidget> createState() {

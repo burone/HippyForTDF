@@ -19,6 +19,7 @@
 //
 
 import 'package:flutter/material.dart';
+import 'package:voltron_renderer/util/devtools_util.dart';
 
 import '../voltron_renderer.dart';
 
@@ -45,6 +46,7 @@ abstract class VoltronViewController<T extends RenderViewModel,
   }
 
   Map<String, ControllerMethodProp> get _baseRegisteredMethodProp => {
+        NodeProps.kDisplay: ControllerMethodProp(setDisplay, ''),
         NodeProps.kTransform: ControllerMethodProp(setTransform, null),
         NodeProps.kTransformOrigin:
             ControllerMethodProp(setTransformOrigin, null),
@@ -53,6 +55,13 @@ abstract class VoltronViewController<T extends RenderViewModel,
         NodeProps.kBackgroundColor:
             ControllerMethodProp(setBackgroundColor, Colors.transparent.value),
         NodeProps.kOpacity: ControllerMethodProp(setOpacity, 1.0),
+        NodeProps.kNextFocusDownId:
+            ControllerMethodProp(setNextFocusDownId, 0.0),
+        NodeProps.kNextFocusUpId: ControllerMethodProp(setNextFocusUpId, 0.0),
+        NodeProps.kNextFocusLeftId:
+            ControllerMethodProp(setNextFocusLeftId, 0.0),
+        NodeProps.kNextFocusRightId:
+            ControllerMethodProp(setNextFocusRightId, 0.0),
         NodeProps.kBorderRadius: ControllerMethodProp(setBorderRadius, 0.0),
         NodeProps.kBorderTopLeftRadius:
             ControllerMethodProp(setTopLeftBorderRadius, 0.0),
@@ -63,13 +72,6 @@ abstract class VoltronViewController<T extends RenderViewModel,
         NodeProps.kBorderBottomLeftRadius:
             ControllerMethodProp(setBottomLeftBorderRadius, 0.0),
         NodeProps.kBorderWidth: ControllerMethodProp(setBorderWidth, 0.0),
-        NodeProps.kNextFocusDownId:
-            ControllerMethodProp(setNextFocusDownId, 0.0),
-        NodeProps.kNextFocusUpId: ControllerMethodProp(setNextFocusUpId, 0.0),
-        NodeProps.kNextFocusLeftId:
-            ControllerMethodProp(setNextFocusLeftId, 0.0),
-        NodeProps.kNextFocusRightId:
-            ControllerMethodProp(setNextFocusRightId, 0.0),
         NodeProps.kBorderLeftWidth:
             ControllerMethodProp(setLeftBorderWidth, 0.0),
         NodeProps.kBorderTopWidth: ControllerMethodProp(setTopBorderWidth, 0.0),
@@ -87,6 +89,7 @@ abstract class VoltronViewController<T extends RenderViewModel,
             ControllerMethodProp(setBorderRightColor, Colors.transparent.value),
         NodeProps.kBorderBottomColor: ControllerMethodProp(
             setBorderBottomColor, Colors.transparent.value),
+        NodeProps.kBorderStyle: ControllerMethodProp(setBorderStyle, ''),
         NodeProps.kBoxShadow: ControllerMethodProp(setBoxShadow, null),
         NodeProps.kTransition: ControllerMethodProp(setTransition, null),
         NodeProps.kAnimation: ControllerMethodProp(setAnimation, null),
@@ -104,10 +107,16 @@ abstract class VoltronViewController<T extends RenderViewModel,
         NodeProps.shadowOpacity: ControllerMethodProp(setShadowOpacity, 0.0),
         NodeProps.shadowRadius: ControllerMethodProp(setShadowRadius, 0.0),
         NodeProps.shadowSpread: ControllerMethodProp(setShadowSpread, 0.0),
-        NodeProps.shadowColor: ControllerMethodProp(setShadowColor, Colors.transparent.value),
+        NodeProps.shadowColor:
+            ControllerMethodProp(setShadowColor, Colors.transparent.value),
       };
 
   Map<String, ControllerMethodProp> get extendRegisteredMethodProp;
+
+  @ControllerProps(NodeProps.kDisplay)
+  void setDisplay(T viewModel, String display) {
+    viewModel.display = display;
+  }
 
   @ControllerProps(NodeProps.kTransform)
   void setTransform(T viewModel, VoltronArray? transformArray) {
@@ -140,8 +149,8 @@ abstract class VoltronViewController<T extends RenderViewModel,
   @ControllerProps(NodeProps.shadowOffset)
   void setShadowOffset(T viewModel, VoltronMap? shadowOffset) {
     if (shadowOffset != null) {
-      viewModel.shadowOffsetX = shadowOffset.get<int>('x')?.toDouble();
-      viewModel.shadowOffsetY = shadowOffset.get<int>('y')?.toDouble();
+      viewModel.shadowOffsetX = shadowOffset.get<double>('x') ?? 0.0;
+      viewModel.shadowOffsetY = shadowOffset.get<double>('y') ?? 0.0;
     }
   }
 
@@ -177,8 +186,7 @@ abstract class VoltronViewController<T extends RenderViewModel,
 
   @ControllerProps(NodeProps.kPropAccessibilityLabel)
   void setAccessibilityLabel(T viewModel, String? accessibilityLabel) {
-    viewModel.accessibilityLabel =
-        accessibilityLabel ?? "";
+    viewModel.accessibilityLabel = accessibilityLabel ?? "";
   }
 
   @ControllerProps(NodeProps.kBackgroundColor)
@@ -289,6 +297,11 @@ abstract class VoltronViewController<T extends RenderViewModel,
     viewModel.borderBottomColor = color;
   }
 
+  @ControllerProps(NodeProps.kBorderStyle)
+  void setBorderStyle(T viewModel, String borderStyle) {
+    viewModel.borderStyle = borderStyle;
+  }
+
   @ControllerProps(NodeProps.kBoxShadow)
   void setBoxShadow(T viewModel, VoltronArray? data) {
     viewModel.boxShadow = data;
@@ -354,20 +367,16 @@ abstract class VoltronViewController<T extends RenderViewModel,
   Widget createWidget(BuildContext context, T viewModel);
 
   void updateLayout(RenderContext context, R node) {
-    if (shouldInterceptLayout(node)) {
-      return;
-    }
-
     var layoutX = node.layoutX;
     var layoutY = node.layoutY;
     var layoutWidth = node.layoutWidth;
     var layoutHeight = node.layoutHeight;
-    node.renderViewModel
-        .updateLayout(layoutX, layoutY, layoutWidth, layoutHeight);
-  }
-
-  bool shouldInterceptLayout(R node) {
-    return false;
+    node.renderViewModel.updateLayout(
+      layoutX,
+      layoutY,
+      layoutWidth,
+      layoutHeight,
+    );
   }
 
   void updateExtra(T renderViewModel, Object updateExtra) {}
@@ -418,6 +427,10 @@ abstract class VoltronViewController<T extends RenderViewModel,
   R createRenderNode(int id, VoltronMap? props, String name, RenderTree tree,
       ControllerManager controllerManager, bool lazy);
 
+  VirtualNode? createVirtualNode(id, pid, index, className, props) {
+    return null;
+  }
+
   T createRenderViewModel(R node, RenderContext context);
 
   // dispatch the js call UI Function.
@@ -426,7 +439,21 @@ abstract class VoltronViewController<T extends RenderViewModel,
   // @param array 函数参数
   // @param promise 回调
   void dispatchFunction(T viewModel, String functionName, VoltronArray array,
-      {Promise? promise}) {}
+      {Promise? promise}) {
+    switch(functionName) {
+      case DevtoolsUtil.kGetScreenShot:
+        DevtoolsUtil.getScreenShot(viewModel, array, promise);
+        break;
+      case DevtoolsUtil.kAddFrameCallback:
+        DevtoolsUtil.addFrameCallback(viewModel, array, promise);
+        break;
+      case DevtoolsUtil.kRemoveFrameCallback:
+        DevtoolsUtil.removeFrameCallback(viewModel, array, promise);
+        break;
+      default:
+        break;
+    }
+  }
 
   void onBatchComplete(R node) {}
 

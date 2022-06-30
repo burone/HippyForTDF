@@ -27,30 +27,24 @@ public class HippyScrollViewController<T extends ViewGroup & HippyScrollView> ex
 
     private static final String TAG = "HippyScrollViewController";
     protected static final String SCROLL_TO = "scrollTo";
-    private static final String SCROLL_TO_WITHOPTIONS = "scrollToWithOptions";
+    private static final String SCROLL_TO_WITH_OPTIONS = "scrollToWithOptions";
     private static final String SCROLL_BY = "scrollBy";
     public static final String CLASS_NAME = "ScrollView";
 
     @Override
     protected View createViewImpl(@NonNull Context context, @Nullable Map props) {
-        boolean enableScrollEvent = false;
         boolean isHorizontal = false;
         if (props != null) {
             if (props.get("horizontal") instanceof Boolean) {
                 isHorizontal = (boolean) props.get("horizontal");
             }
-            if (props.get("onScroll") instanceof Boolean) {
-                enableScrollEvent = (boolean) props.get("onScroll");
-            }
         }
-
         View scrollView;
         if (isHorizontal) {
             scrollView = new HippyHorizontalScrollView(context);
         } else {
             scrollView = new HippyVerticalScrollView(context);
         }
-        ((HippyScrollView) scrollView).setScrollEventEnable(enableScrollEvent);
         return scrollView;
     }
 
@@ -67,26 +61,6 @@ public class HippyScrollViewController<T extends ViewGroup & HippyScrollView> ex
     @HippyControllerProps(name = "showScrollIndicator", defaultType = HippyControllerProps.BOOLEAN)
     public void setShowScrollIndicator(HippyScrollView view, boolean flag) {
         view.showScrollIndicator(flag);
-    }
-
-    @HippyControllerProps(name = "onScrollBeginDrag", defaultType = HippyControllerProps.BOOLEAN)
-    public void setScrollBeginDragEventEnable(HippyScrollView view, boolean flag) {
-        view.setScrollBeginDragEventEnable(flag);
-    }
-
-    @HippyControllerProps(name = "onScrollEndDrag", defaultType = HippyControllerProps.BOOLEAN)
-    public void setScrollEndDragEventEnable(HippyScrollView view, boolean flag) {
-        view.setScrollEndDragEventEnable(flag);
-    }
-
-    @HippyControllerProps(name = "onMomentumScrollBegin", defaultType = HippyControllerProps.BOOLEAN)
-    public void setMomentumScrollBeginEventEnable(HippyScrollView view, boolean flag) {
-        view.setMomentumScrollBeginEventEnable(flag);
-    }
-
-    @HippyControllerProps(name = "onMomentumScrollEnd", defaultType = HippyControllerProps.BOOLEAN)
-    public void setMomentumScrollEndEventEnable(HippyScrollView view, boolean flag) {
-        view.setMomentumScrollEndEventEnable(flag);
     }
 
     @HippyControllerProps(name = "flingEnabled", defaultType = HippyControllerProps.BOOLEAN, defaultBoolean = true)
@@ -202,7 +176,7 @@ public class HippyScrollViewController<T extends ViewGroup & HippyScrollView> ex
             case SCROLL_TO:
                 handleScrollTo(view, params);
                 break;
-            case SCROLL_TO_WITHOPTIONS:
+            case SCROLL_TO_WITH_OPTIONS:
                 handleScrollToWithOptions(view, params);
                 break;
           case SCROLL_BY:

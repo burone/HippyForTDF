@@ -53,9 +53,14 @@ class RootRenderViewModel extends GroupViewModel {
   }
 }
 
+int _kRenderNodeInstanceInc = 1;
+
 class RenderNode extends StyleNode {
   // 唯一标识
   final int _id;
+
+  // 调试时候查看是否是同一个viewModel实例
+  final int _nodeInstanceId = _kRenderNodeInstanceInc++;
 
   /// 布局属性
   double _x = 0;
@@ -101,6 +106,8 @@ class RenderNode extends StyleNode {
 
   int get indexFromParent => _parent?._children.indexOf(this) ?? 0;
 
+  RenderContext get renderContext => _controllerManager.context;
+
   @override
   int get id => _id;
 
@@ -133,8 +140,6 @@ class RenderNode extends StyleNode {
 
   bool get hasCustomLayout => false;
 
-  bool get isVirtual => false;
-
   List<RenderNode> get children => _children;
 
   VoltronViewController findController() {
@@ -165,7 +170,9 @@ class RenderNode extends StyleNode {
 
   int calculateLayout(FlexLayoutParams layoutParams) {
     return FlexOutput.makeMeasureResult(
-        layoutParams.width, layoutParams.height);
+      layoutParams.width,
+      layoutParams.height,
+    );
   }
 
   @override
@@ -213,7 +220,6 @@ class RenderNode extends StyleNode {
   }
 
   void createViewModelRecursive() {
-    renderViewModel;
     for (var renderNode in _children) {
       renderNode.createViewModelRecursive();
     }
@@ -246,7 +252,6 @@ class RenderNode extends StyleNode {
 
     return;
   }
-
 
   bool _shouldUpdateView() {
     return _controllerManager.hasNode(this);
@@ -313,7 +318,8 @@ class RenderNode extends StyleNode {
   }
 
   void removeEvent(Set<String> eventNameList) {
-    _eventHolders.addAll(eventNameList.map((e) => EventHolder(e, isAdd: false)));
+    _eventHolders
+        .addAll(eventNameList.map((e) => EventHolder(e, isAdd: false)));
   }
 
   RenderNode? getChildAt(int index) {
@@ -332,7 +338,8 @@ class RenderNode extends StyleNode {
 
   void update() {
     LogUtils.dRenderNode(
-        "($hashCode) Id:$id updateStyle, ${_shouldUpdateView()}");
+      "($hashCode) Id:$id start updateStyle, shouldUpdateView: ${_shouldUpdateView()}",
+    );
 
     if (_shouldUpdateView()) {
       if (_childrenPendingList.isNotEmpty) {
@@ -375,7 +382,8 @@ class RenderNode extends StyleNode {
           "($hashCode) Id:$id start update layout:$_hasUpdateLayout");
       if (_hasUpdateLayout && !isRoot) {
         _controllerManager.updateLayout(this);
-        LogUtils.dRenderNode("($hashCode) Id:$id updateLayout");
+        LogUtils.dRenderNode(
+            "($hashCode) Id:$id end update layout:[$layoutX, $layoutY, $_width, $_height]");
         _hasUpdateLayout = false;
       }
 
@@ -464,7 +472,6 @@ class RenderNode extends StyleNode {
         _propToUpdate = combineProps(curProps, map);
       }
     }
-
   }
 
   void updateExtra(Object object) {

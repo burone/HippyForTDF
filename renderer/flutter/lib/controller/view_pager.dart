@@ -32,29 +32,38 @@ class ViewPagerController
   static const String kClassName = "ViewPager";
   static const kInitialPage = "initialPage";
   static const kPageMargin = "pageMarginFact";
+  static const kBounces = "bounces";
+  static const kDirection = "direction";
 
   static const String kFuncSetPage = "setPage";
   static const String kFuncSetPageWidthOutAnim = "setPageWithoutAnimation";
 
   @override
   ViewPagerRenderViewModel createRenderViewModel(
-      RenderNode node, RenderContext context) {
+    RenderNode node,
+    RenderContext context,
+  ) {
     return ViewPagerRenderViewModel(
-        id: node.id,
-        instanceId: node.rootId,
-        className: node.name,
-        context: context);
+      id: node.id,
+      instanceId: node.rootId,
+      className: node.name,
+      context: context,
+    );
   }
 
   @override
   Widget createWidget(
-      BuildContext context, ViewPagerRenderViewModel viewModel) {
+    BuildContext context,
+    ViewPagerRenderViewModel viewModel,
+  ) {
     return ViewPagerWidget(viewModel);
   }
 
   @override
   Map<String, ControllerMethodProp> get groupExtraMethodProp => {
         kInitialPage: ControllerMethodProp(setInitialPage, 0),
+        kBounces: ControllerMethodProp(setBounces, false),
+        kDirection: ControllerMethodProp(setDirection, ''),
         NodeProps.kScrollEnable: ControllerMethodProp(setScrollEnabled, true),
         kPageMargin: ControllerMethodProp(setPageMargin, 0.0),
         NodeProps.kOverflow: ControllerMethodProp(setOverflow, "visible")
@@ -67,6 +76,21 @@ class ViewPagerController
   void setInitialPage(
       ViewPagerRenderViewModel renderViewModel, int initialPage) {
     renderViewModel.initialPage = initialPage;
+  }
+
+  @ControllerProps(kBounces)
+  void setBounces(ViewPagerRenderViewModel renderViewModel, bool flag) {
+    renderViewModel.bounces = flag;
+  }
+
+  @ControllerProps(kDirection)
+  void setDirection(
+      ViewPagerRenderViewModel renderViewModel, String direction) {
+    if (direction == 'vertical') {
+      renderViewModel.isVertical = true;
+    } else {
+      renderViewModel.isVertical = false;
+    }
   }
 
   @ControllerProps(NodeProps.kScrollEnable)
@@ -99,18 +123,20 @@ class ViewPagerController
       if (selected is int &&
           selected >= 0 &&
           selected < viewModel.children.length) {
-        viewModel.pageController?.animateToPage(selected,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.linearToEaseOut);
+        viewModel.pageController?.animateToPage(
+          selected,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.linearToEaseOut,
+        );
       }
     } else if (functionName == kFuncSetPageWidthOutAnim) {
       Object selected = array.get(0);
       if (selected is int &&
           selected >= 0 &&
           selected < viewModel.children.length) {
-        viewModel.pageController?.animateToPage(selected,
-            duration: const Duration(milliseconds: 40),
-            curve: Curves.linearToEaseOut);
+        viewModel.pageController?.jumpToPage(
+          selected,
+        );
       }
     }
   }
@@ -141,9 +167,4 @@ class ViewPagerItemController
 
   @override
   String get name => kClassName;
-
-  @override
-  bool shouldInterceptLayout(RenderNode node) {
-    return true;
-  }
 }

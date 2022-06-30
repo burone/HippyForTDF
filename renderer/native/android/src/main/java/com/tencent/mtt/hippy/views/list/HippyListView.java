@@ -512,7 +512,7 @@ public class HippyListView extends RecyclerView implements HippyViewBase {
     protected void sendExposureEvent(@NonNull View view, @NonNull String eventName,
             @NonNull Map<String, Object> props) {
         if (props.containsKey(eventName)) {
-            EventUtils.send(view, eventName, null);
+            EventUtils.sendComponentEvent(view, eventName, null);
         }
     }
 
@@ -708,7 +708,7 @@ public class HippyListView extends RecyclerView implements HippyViewBase {
     protected OnScrollDragStartedEvent getOnScrollDragStartedEvent() {
         if (mOnScrollDragStartedEvent == null) {
             mOnScrollDragStartedEvent = new OnScrollDragStartedEvent(
-                    HippyScrollViewEventHelper.EVENT_TYPE_BEGIN_DRAG);
+                    EventUtils.EVENT_SCROLLER_BEGIN_DRAG);
         }
         return mOnScrollDragStartedEvent;
     }
@@ -724,7 +724,7 @@ public class HippyListView extends RecyclerView implements HippyViewBase {
     protected OnScrollDragEndedEvent getOnScrollDragEndedEvent() {
         if (mOnScrollDragEndedEvent == null) {
             mOnScrollDragEndedEvent = new OnScrollDragEndedEvent(
-                    HippyScrollViewEventHelper.EVENT_TYPE_END_DRAG);
+                    EventUtils.EVENT_SCROLLER_END_DRAG);
         }
         return mOnScrollDragEndedEvent;
     }
@@ -740,7 +740,7 @@ public class HippyListView extends RecyclerView implements HippyViewBase {
     protected OnScrollFlingStartedEvent getOnScrollFlingStartedEvent() {
         if (mOnScrollFlingStartedEvent == null) {
             mOnScrollFlingStartedEvent = new OnScrollFlingStartedEvent(
-                    HippyScrollViewEventHelper.EVENT_TYPE_MOMENTUM_BEGIN);
+                    EventUtils.EVENT_SCROLLER_MOMENTUM_BEGIN);
         }
         return mOnScrollFlingStartedEvent;
     }
@@ -756,7 +756,7 @@ public class HippyListView extends RecyclerView implements HippyViewBase {
     protected OnScrollFlingEndedEvent getOnScrollFlingEndedEvent() {
         if (mOnScrollFlingEndedEvent == null) {
             mOnScrollFlingEndedEvent = new OnScrollFlingEndedEvent(
-                    HippyScrollViewEventHelper.EVENT_TYPE_MOMENTUM_END);
+                    EventUtils.EVENT_SCROLLER_MOMENTUM_END);
         }
         return mOnScrollFlingEndedEvent;
     }
@@ -771,7 +771,7 @@ public class HippyListView extends RecyclerView implements HippyViewBase {
     // scroll
     protected OnScrollEvent getOnScrollEvent() {
         if (mOnScrollEvent == null) {
-            mOnScrollEvent = new OnScrollEvent(HippyScrollViewEventHelper.EVENT_TYPE_SCROLL);
+            mOnScrollEvent = new OnScrollEvent(EventUtils.EVENT_SCROLLER_ON_SCROLL);
         }
         return mOnScrollEvent;
     }
@@ -813,7 +813,7 @@ public class HippyListView extends RecyclerView implements HippyViewBase {
             @Nullable Map<String, Object> params) {
         View view = getCustomHeaderView();
         if (view instanceof HippyPullHeaderView) {
-            EventUtils.send(view, eventName, params);
+            EventUtils.sendComponentEvent(view, eventName, params);
         }
     }
 
@@ -821,7 +821,7 @@ public class HippyListView extends RecyclerView implements HippyViewBase {
             @Nullable Map<String, Object> params) {
         View view = getCustomFooterView();
         if (view instanceof HippyPullFooterView) {
-            EventUtils.send(view, eventName, params);
+            EventUtils.sendComponentEvent(view, eventName, params);
         }
     }
 }

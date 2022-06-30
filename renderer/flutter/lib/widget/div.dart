@@ -46,8 +46,7 @@ class DivWidget extends FRStatefulWidget {
 class _DivWidgetState extends FRState<DivWidget> {
   @override
   Widget build(BuildContext context) {
-    LogUtils.dWidget('div',
-        "type: DivWidget id: ${widget.viewModel.id} name: ${widget.viewModel.name}");
+    LogUtils.dWidget('div', "type: DivWidget(${widget.viewModel.idDesc})");
     return ChangeNotifierProvider.value(
       value: widget.viewModel,
       child: divChild(),
@@ -90,8 +89,9 @@ class DivContainerWidget extends FRBaseStatelessWidget {
           }
         }
         result = Stack(
-            children: childrenWidget,
-            clipBehavior: toOverflow(_viewModel.overflow));
+          children: childrenWidget,
+          clipBehavior: toOverflow(_viewModel.overflow),
+        );
       } else {
         var id = _viewModel.sortedIdList[0];
         var childrenViewModel = _viewModel.childrenMap[id];
@@ -122,16 +122,15 @@ Widget generateByViewModel(
 class BoxWidget extends FRStatefulWidget {
   final RenderViewModel _viewModel;
   final Widget child;
-  final bool isInfinitySize;
 
   /// 动画属性
   final VoltronMap? animationProperty;
 
-  BoxWidget(this._viewModel,
-      {required this.child,
-      this.isInfinitySize = false,
-      this.animationProperty})
-      : super(_viewModel);
+  BoxWidget(
+    this._viewModel, {
+    required this.child,
+    this.animationProperty,
+  }) : super(_viewModel);
 
   @override
   State<StatefulWidget> createState() {
@@ -148,9 +147,11 @@ class _BoxWidgetState extends FRState<BoxWidget> {
     var engineMonitor = widget._viewModel.context.engineMonitor;
     if (!(engineMonitor.hasAddPostFrameCall)) {
       engineMonitor.hasAddPostFrameCall = true;
-      WidgetsBinding.instance?.addPostFrameCallback((duration) {
+      WidgetsBinding.instance.addPostFrameCallback((duration) {
         LogUtils.dWidget(
-            "div", 'addPostFrameCallback ${widget._viewModel.id.toString()}');
+          "div",
+          'addPostFrameCallback ${widget._viewModel.id.toString()}',
+        );
         var engineMonitor = widget._viewModel.context.engineMonitor;
         engineMonitor.postFrameCallback();
       });
@@ -164,14 +165,11 @@ class _BoxWidgetState extends FRState<BoxWidget> {
         widget._viewModel.height;
     var width = animationProperty?.get<num>(NodeProps.kWidth)?.toDouble() ??
         widget._viewModel.width;
-    if (widget.isInfinitySize) {
-      height ??= double.infinity;
-      width ??= double.infinity;
-    }
-
-    if ((width != null && width.isNaN) || (height != null && height.isNaN)) {
-      LogUtils.d("BoxWidget",
-          "build box widget error, wrong size:(${widget._viewModel.width}, ${widget._viewModel.height})");
+    if (widget._viewModel.noSize) {
+      LogUtils.d(
+        "BoxWidget",
+        "build box widget error, wrong size:(${widget._viewModel.width}, ${widget._viewModel.height}), node:${widget._viewModel.idDesc}",
+      );
       if (!kReleaseMode && debugProfileBuildsEnabled) Timeline.finishSync();
       return Container();
     }
@@ -184,18 +182,31 @@ class _BoxWidgetState extends FRState<BoxWidget> {
     }
 
     var current = widget.child;
+
     final color = animationProperty?.get<Color>(NodeProps.kBackgroundColor) ??
         widget._viewModel.backgroundColor;
     final decoration = widget._viewModel.getDecoration(backgroundColor: color);
     if (decoration != null) {
-      current = DecoratedBox(decoration: decoration, child: current);
+      current = Container(
+        width: width,
+        height: height,
+        decoration: decoration,
+        child: current,
+      );
     } else if (color != null) {
-      current = ColoredBox(color: color, child: current);
+      current = Container(
+        width: width,
+        height: height,
+        color: color,
+        child: current,
+      );
+    } else {
+      current = SizedBox(
+        width: width,
+        height: height,
+        child: current,
+      );
     }
-
-    current = ConstrainedBox(
-        constraints: BoxConstraints.tightFor(width: width, height: height),
-        child: current);
 
     var opacity = animationProperty?.get<num>(NodeProps.kOpacity)?.toDouble() ??
         widget._viewModel.opacity;
@@ -246,10 +257,11 @@ class _BoxWidgetState extends FRState<BoxWidget> {
       final origin = transformOrigin.offset;
       final alignment = transformOrigin.alignment;
       current = Transform(
-          origin: origin,
-          child: current,
-          transform: transform,
-          alignment: alignment);
+        origin: origin,
+        child: current,
+        transform: transform,
+        alignment: alignment,
+      );
     }
 
     // 如果父级出现 overflow 裁剪，那么就执行裁剪
@@ -281,17 +293,24 @@ class PositionWidget extends FRBaseStatelessWidget {
   final RenderViewModel _viewModel;
   final Widget child;
 
-  PositionWidget(this._viewModel, {Key? key, required this.child})
-      : super(_viewModel.name, _viewModel.context, key: key);
+  PositionWidget(
+    this._viewModel, {
+    Key? key,
+    required this.child,
+  }) : super(_viewModel.name, _viewModel.context, key: key);
 
   @override
   Widget build(BuildContext context) {
     if (!kReleaseMode && debugProfileBuildsEnabled) {
-      Timeline.startSync('[b]PositionWidget',
-          arguments: timelineArgumentsIndicatingLandmarkEvent);
+      Timeline.startSync(
+        '[b]PositionWidget',
+        arguments: timelineArgumentsIndicatingLandmarkEvent,
+      );
     }
-    LogUtils.dWidget("PositionWidget",
-        "build position widget(${_viewModel.layoutX}, ${_viewModel.layoutY})  id: ${_viewModel.id} name: ${_viewModel.name}");
+    LogUtils.dWidget(
+      "PositionWidget",
+      "build position widget(${_viewModel.layoutX}, ${_viewModel.layoutY}, ${_viewModel.width}, ${_viewModel.height}) , node:${_viewModel.idDesc}",
+    );
     Widget result;
     var node = child;
     var parent = _viewModel.parent;
@@ -302,9 +321,17 @@ class PositionWidget extends FRBaseStatelessWidget {
 
     if (parent != null && !parent.interceptChildPosition()) {
       if (_viewModel.noSize || _viewModel.noPosition) {
-        LogUtils.d("PositionWidget",
-            "build box widget error, wrong size:(${_viewModel.layoutX}, ${_viewModel.layoutY})");
-        result = Container();
+        if (_viewModel.isShow) {
+          LogUtils.d(
+            "PositionWidget",
+            "build box widget error, wrong size:(${_viewModel.layoutX}, ${_viewModel.layoutY}), node:${_viewModel.idDesc}",
+          );
+        }
+        if (parentUseStack) {
+          result = const Positioned(child: SizedBox());
+        } else {
+          result = const SizedBox();
+        }
       } else {
         result = AnimationWidget(node, _viewModel, parentUseStack);
       }

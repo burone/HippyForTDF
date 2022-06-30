@@ -29,9 +29,9 @@ import android.view.View;
 import android.view.ViewGroup;
 import com.tencent.mtt.hippy.utils.LogUtils;
 import com.tencent.mtt.hippy.utils.PixelUtil;
-import com.tencent.mtt.nxeasy.recyclerview.helper.skikcy.IHeaderAttachListener;
-import com.tencent.mtt.nxeasy.recyclerview.helper.skikcy.IHeaderHost;
-import com.tencent.mtt.nxeasy.recyclerview.helper.skikcy.StickyHeaderHelper;
+import com.tencent.mtt.hippy.views.hippylist.recyclerview.helper.skikcy.IHeaderAttachListener;
+import com.tencent.mtt.hippy.views.hippylist.recyclerview.helper.skikcy.IHeaderHost;
+import com.tencent.mtt.hippy.views.hippylist.recyclerview.helper.skikcy.StickyHeaderHelper;
 
 /**
  * Created  on 2020/12/22. Description
@@ -39,6 +39,7 @@ import com.tencent.mtt.nxeasy.recyclerview.helper.skikcy.StickyHeaderHelper;
 public class HippyRecyclerView<ADP extends HippyRecyclerListAdapter> extends HippyRecyclerViewBase
         implements IHeaderAttachListener, IHippyViewAboundListener {
 
+    private static int DEFAULT_ITEM_VIEW_CACHE_SIZE = 8;
     protected ADP listAdapter;
     protected boolean isEnableScroll = true;    //使能ListView的滚动功能
     protected StickyHeaderHelper stickyHeaderHelper;        //支持吸顶
@@ -49,6 +50,7 @@ public class HippyRecyclerView<ADP extends HippyRecyclerListAdapter> extends Hip
     private NodePositionHelper nodePositionHelper;
     private ViewStickEventHelper viewStickEventHelper;
     private boolean stickEventEnable;
+    private int mInitialContentOffset;
 
     public HippyRecyclerView(Context context) {
         super(context);
@@ -90,6 +92,7 @@ public class HippyRecyclerView<ADP extends HippyRecyclerListAdapter> extends Hip
     public void initRecyclerView() {
         setAdapter(new HippyRecyclerListAdapter<HippyRecyclerView>(this));
         intEventHelper();
+        setItemViewCacheSize(DEFAULT_ITEM_VIEW_CACHE_SIZE);
     }
 
 
@@ -99,6 +102,32 @@ public class HippyRecyclerView<ADP extends HippyRecyclerListAdapter> extends Hip
             return false;
         }
         return super.onTouchEvent(e);
+    }
+
+    public void setInitialContentOffset(int initialContentOffset) {
+        mInitialContentOffset = initialContentOffset;
+    }
+
+    private int getFirstVisiblePositionByOffset(int offset) {
+        int position = 0;
+        int distanceToPosition = 0;
+        int itemCount = getAdapter().getItemCount();
+        boolean vertical = HippyListUtils.isVerticalLayout(this);
+        for (int i = 0; i < itemCount; i++) {
+            distanceToPosition += vertical ? listAdapter.getItemHeight(i) : listAdapter.getItemWidth(i);
+            if (distanceToPosition > offset) {
+                position = i;
+                break;
+            }
+        }
+        return position;
+    }
+
+    private void scrollToInitContentOffset() {
+        int position = getFirstVisiblePositionByOffset(mInitialContentOffset);
+        int positionOffset = -(mInitialContentOffset - getTotalHeightBefore(position));
+        scrollToPositionWithOffset(position, positionOffset);
+        mInitialContentOffset = 0;
     }
 
     /**
@@ -112,7 +141,9 @@ public class HippyRecyclerView<ADP extends HippyRecyclerListAdapter> extends Hip
         renderNodeCount = getAdapter().getRenderNodeCount();
         dispatchLayout();
         if (renderNodeCount > 0) {
-            getAdapter().resetPullHeaderPositionIfNeeded(getContentOffsetY());
+            if (mInitialContentOffset > 0 && getChildCount() > 0) {
+                scrollToInitContentOffset();
+            }
         }
     }
 

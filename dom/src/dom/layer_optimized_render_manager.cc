@@ -67,6 +67,8 @@ void LayerOptimizedRenderManager::UpdateRenderNode(std::vector<std::shared_ptr<D
   }
 }
 
+void LayerOptimizedRenderManager::MoveRenderNode(std::vector<std::shared_ptr<DomNode>> &&nodes) {}
+
 void LayerOptimizedRenderManager::DeleteRenderNode(std::vector<std::shared_ptr<DomNode>>&& nodes) {
   std::vector<std::shared_ptr<DomNode>> nodes_to_delete;
   for (const auto& node : nodes) {
@@ -127,7 +129,7 @@ void LayerOptimizedRenderManager::CallFunction(
 }
 
 bool LayerOptimizedRenderManager::ComputeLayoutOnly(const std::shared_ptr<DomNode>& node) const {
-  return node->GetTagName() == kTagNameView
+  return node->GetViewName() == kTagNameView
          && CheckStyleJustLayout(node)
          && !node->HasEventListeners();
 }

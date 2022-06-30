@@ -7,10 +7,10 @@ const { nodeResolve } = require('@rollup/plugin-node-resolve');
 const flow = require('rollup-plugin-flow-no-whitespace');
 
 const VueVersion = require('vue/package.json').version;
-const hippyVuePackage = require('../framework/js/packages/hippy-vue/package.json');
-const cssLoaderPackage = require('../framework/js/packages/hippy-vue-css-loader/package.json');
-const nativeComponentsPackage = require('../framework/js/packages/hippy-vue-native-components/package.json');
-const routerPackage = require('../framework/js/packages/hippy-vue-router/package.json');
+const hippyVuePackage = require('../driver/js/packages/hippy-vue/package.json');
+const cssLoaderPackage = require('../driver/js/packages/hippy-vue-css-loader/package.json');
+const nativeComponentsPackage = require('../driver/js/packages/hippy-vue-native-components/package.json');
+const routerPackage = require('../driver/js/packages/hippy-vue-router/package.json');
 
 const andHippyVueString = ` and Hippy-Vue v${hippyVuePackage.version}`;
 
@@ -53,7 +53,7 @@ function resolveVue(p) {
 }
 
 function resolvePackage(src, extra = 'src') {
-  return path.resolve(__dirname, '../framework/js/packages/', src, extra);
+  return path.resolve(__dirname, '../driver/js/packages/', src, extra);
 }
 
 const aliases = {
@@ -63,7 +63,7 @@ const aliases = {
   core: resolveVue('core'),
   shared: resolveVue('shared'),
   sfc: resolveVue('sfc'),
-  he: path.resolve(__dirname, '../framework/js/packages/hippy-vue/src/util/entity-decoder'),
+  he: path.resolve(__dirname, '../driver/js/packages/hippy-vue/src/util/entity-decoder'),
   '@vue': resolvePackage('hippy-vue'),
   '@router': resolvePackage('hippy-vue-router'),
   '@css-loader': resolvePackage('hippy-vue-css-loader'),
@@ -120,6 +120,8 @@ function genConfig(name) {
           'let _isServer': 'let _isServer = false',
           'process.env.VUE_VERSION': `"${VueVersion}"`,
           'process.env.HIPPY_VUE_VERSION': `"${hippyVuePackage.version}"`,
+          // enable vue-devtools if __VUE_DEVTOOLS_GLOBAL_HOOK__ exist
+          'inBrowser && window.__VUE_DEVTOOLS_GLOBAL_HOOK__': 'global.__VUE_DEVTOOLS_GLOBAL_HOOK__',
         },
       }),
       flow(),

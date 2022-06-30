@@ -18,7 +18,6 @@ package com.tencent.mtt.hippy.views.hippylist;
 
 import androidx.recyclerview.widget.RecyclerView;
 import android.view.View;
-import com.tencent.mtt.hippy.uimanager.HippyViewEvent;
 import com.tencent.renderer.utils.EventUtils;
 
 /**
@@ -52,7 +51,8 @@ public class PreloadHelper extends RecyclerView.OnScrollListener {
     }
 
     public void sendReachEndEvent(RecyclerView recyclerView) {
-        EventUtils.send((View) recyclerView.getParent(), EventUtils.EVENT_RECYCLER_END_REACHED, null);
+        EventUtils.sendComponentEvent((View) recyclerView.getParent(), EventUtils.EVENT_RECYCLER_END_REACHED, null);
+        EventUtils.sendComponentEvent((View) recyclerView.getParent(), EventUtils.EVENT_RECYCLER_LOAD_MORE, null);
     }
 
     /**

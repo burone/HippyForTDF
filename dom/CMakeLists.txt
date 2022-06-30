@@ -1,58 +1,96 @@
-set(LIB_NAME "dom")
+#
+# Tencent is pleased to support the open source community by making
+# Hippy available.
+#
+# Copyright (C) 2022 THL A29 Limited, a Tencent company.
+# All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+cmake_minimum_required(VERSION 3.14)
 
 project("dom")
+
 set(LAYOUT_ENGINE "Yoga")
 
 get_filename_component(PROJECT_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/.." REALPATH)
-get_filename_component(CORE_DIR "${PROJECT_ROOT_DIR}/framework/js/core/" REALPATH)
-get_filename_component(THIRD_DIR "${PROJECT_ROOT_DIR}/third_party/" REALPATH)
 
-message("LAYOUT_ENGINE:" ${LAYOUT_ENGINE})
-if (${LAYOUT_ENGINE} STREQUAL "Yoga")
-  get_filename_component(LAYOUT_DIR "${THIRD_DIR}/yoga/include" REALPATH)
-  message("ANDROID_ABI: ${ANDROID_ABI}")
+include("${PROJECT_ROOT_DIR}/buildconfig/cmake/InfraPackagesModule.cmake")
+include("${PROJECT_ROOT_DIR}/buildconfig/cmake/compiler_toolchain.cmake")
 
-  add_library(yoga STATIC IMPORTED)
-  if(${ANDROID_ABI} STREQUAL "armeabi-v7a")
-    set_property(TARGET yoga PROPERTY IMPORTED_LOCATION ${THIRD_DIR}/yoga/lib/android/armeabi-v7a/libyoga.a)
-  elseif (${ANDROID_ABI} STREQUAL "arm64-v8a")
-    set_property(TARGET yoga PROPERTY IMPORTED_LOCATION ${THIRD_DIR}/yoga/lib/android/arm64-v8a/libyoga.a)
-  elseif (${ANDROID_ABI} STREQUAL "x86")
-    set_property(TARGET yoga PROPERTY IMPORTED_LOCATION ${THIRD_DIR}/yoga/lib/andriod/x86/libyoga.a)
-  elseif (${ANDROID_ABI} STREQUAL "x86_64")
-    set_property(TARGET yoga PROPERTY IMPORTED_LOCATION ${THIRD_DIR}/yoga/lib/android/x86_64/libyoga.a)
-  else()
-    message(FATAL_ERROR "${ANDROID_ABI} is not supported")
-  endif()
-  set(DEPS yoga)
-elseif (${LAYOUT_ENGINE} STREQUAL "Taitank")
+set(CMAKE_CXX_STANDARD 17)
+
+# region layout engine
+if (NOT DEFINED LAYOUT_ENGINE)
+  set(LAYOUT_ENGINE "Taitank")
+endif()
+
+message("LAYOUT_ENGINE: ${LAYOUT_ENGINE}")
+if ("${LAYOUT_ENGINE}" STREQUAL "Yoga")
+  InfraPackage_Add(yoga
+    REMOTE "dom/third_party/yoga/1.19.0/git-repo.tgz"
+    LOCAL "third_party/yoga"
+  )
+  include_directories(${yoga_SOURCE_DIR}/yoga)
+  set(DEPS yogacore)
+elseif ("${LAYOUT_ENGINE}" STREQUAL "Taitank")
   add_definitions("-DUSE_TAITANK")
-  get_filename_component(LAYOUT_DIR "${PROJECT_ROOT_DIR}/layout" REALPATH)
-  add_subdirectory(${LAYOUT_DIR} layout_out)
+  get_filename_component(TAITANK_LAYOUT_DIR "${PROJECT_ROOT_DIR}/layout" REALPATH)
+  add_subdirectory(${TAITANK_LAYOUT_DIR} dom/third_party/taitank)
+  include_directories(${TAITANK_LAYOUT_DIR})
   set(DEPS layout)
 else()
   message(FATAL_ERROR "Layout Engine ${LAYOUT_ENGINE} is not supported")
 endif()
+# endregion
 
+# region core
+get_filename_component(CORE_DIR "${PROJECT_ROOT_DIR}/driver/js/core/" REALPATH)
 include_directories(${CORE_DIR}/include)
 include_directories(${CORE_DIR}/third_party/base/include)
-include_directories(${LAYOUT_DIR})
-include_directories(${THIRD_DIR})
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
-file(GLOB_RECURSE SRC_FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/**.cc)
+# endregion
+
+# region source set
+set(SOURCE_SET
+  src/dom/animation/animation.cc
+  src/dom/animation/animation_manager.cc
+  src/dom/animation/animation_math.cc
+  src/dom/animation/animation_set.cc
+  src/dom/animation/cubic_bezier_animation.cc
+  src/dom/deserializer.cc
+  src/dom/diff_utils.cc
+  src/dom/dom_argument.cc
+  src/dom/dom_event.cc
+  src/dom/dom_listener.cc
+  src/dom/dom_manager.cc
+  src/dom/dom_node.cc
+  src/dom/dom_value.cc
+  src/dom/layer_optimized_render_manager.cc
+  src/dom/layout_node.cc
+  src/dom/root_node.cc
+  src/dom/scene.cc
+  src/dom/scene_builder.cc
+  src/dom/serializer.cc)
 if (${LAYOUT_ENGINE} STREQUAL "Yoga")
-  list(REMOVE_ITEM SRC_FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/dom/taitank_layout_node.cc)
+  list(APPEND SOURCE_SET src/dom/yoga_layout_node.cc)
 elseif(${LAYOUT_ENGINE} STREQUAL "Taitank")
-  list(REMOVE_ITEM SRC_FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/dom/yoga_layout_node.cc)
-else()
-  message(FATAL_ERROR "Layout Engine ${LAYOUT_ENGINE} is not supported")
+  list(APPEND SOURCE_SET src/dom/taitank_layout_node.cc)
 endif()
-message("SRC_FILES:${SRC_FILES}")
+message("SOURCE_SET: ${SOURCE_SET}")
+# endregion
 
-if (CMAKE_SYSTEM_NAME STREQUAL "Android")
-  set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib/${ANDROID_ABI})
-endif()
-
-add_library(${LIB_NAME} STATIC ${SRC_FILES})
-target_link_libraries(${LIB_NAME} ${DEPS})
-set_property(TARGET ${LIB_NAME} PROPERTY CXX_STANDARD 17)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+add_library(${PROJECT_NAME} STATIC ${SOURCE_SET})
+target_compile_options(${PROJECT_NAME} PRIVATE ${COMPILE_OPTIONS})
+target_link_libraries(${PROJECT_NAME} ${DEPS})

@@ -19,12 +19,13 @@
 //
 
 import 'package:flutter/material.dart';
+
 // ignore: import_of_legacy_library_into_null_safe
 import 'package:gradient_like_css/gradient_like_css.dart';
 
 import '../common.dart';
-import '../render.dart';
 import '../gesture.dart';
+import '../render.dart';
 import '../style.dart';
 import '../util.dart';
 import '../util/gradient_util.dart';
@@ -34,6 +35,8 @@ int _kRenderModelInstanceId = 1;
 
 class RenderViewModel extends ChangeNotifier {
   ContextWrapper? _wrapper;
+
+  String display = '';
 
   double? _x;
   double? _y;
@@ -92,6 +95,7 @@ class RenderViewModel extends ChangeNotifier {
   int? borderTopColor;
   int? borderRightColor;
   int? borderBottomColor;
+  String? borderStyle;
   String overflow = enumValueToString(ContainOverflow.visible);
 
   // voltron box-shadow
@@ -121,8 +125,10 @@ class RenderViewModel extends ChangeNotifier {
   CssAnimation? transition;
   CssAnimation? animation;
   String? animationFillMode;
+
   // animation动画播放结束后，animationFillModel为'none'时，需要设置的属性集
   VoltronMap? animationEndPropertyMap;
+
   // 需要根据animation规则操作的动画属性Map(key: String, value: AnimationPropertyOption(如：禁止设置属性值))
   VoltronMap? animationPropertyOptionMap;
 
@@ -131,15 +137,26 @@ class RenderViewModel extends ChangeNotifier {
   // 手势事件相关
   late NativeGestureDispatcher _dispatcher;
 
+  bool get isShow => display != 'none';
+
   int get id => _id;
+
+  String get idDesc => '$name($id)-$_modelId';
+
   int get rootId => _instanceId;
+
   String get name => _className;
+
   ContextWrapper? get contextWrapper => _wrapper;
+
   Map<String, Object> get extraInfo => _extraInfo;
 
   double? get layoutX => _x;
+
   double? get layoutY => _y;
+
   double? get width => _width;
+
   double? get height => _height;
 
   bool get noPosition =>
@@ -172,13 +189,22 @@ class RenderViewModel extends ChangeNotifier {
   RenderViewModel? childFromId(int id) => null;
 
   RenderViewModel(
-      this._id, this._instanceId, this._className, RenderContext context)
-      : _renderContext = context {
+    this._id,
+    this._instanceId,
+    this._className,
+    RenderContext context,
+  ) : _renderContext = context {
     _dispatcher = createDispatcher();
   }
 
-  RenderViewModel.copy(this._id, this._instanceId, this._className,
-      this._renderContext, RenderViewModel viewModel) {
+  RenderViewModel.copy(
+    this._id,
+    this._instanceId,
+    this._className,
+    this._renderContext,
+    RenderViewModel viewModel,
+  ) {
+    display = viewModel.display;
     _x = viewModel.layoutX;
     _y = viewModel.layoutY;
     _width = viewModel.width;
@@ -203,6 +229,7 @@ class RenderViewModel extends ChangeNotifier {
     borderTopColor = viewModel.borderTopColor;
     borderRightColor = viewModel.borderRightColor;
     borderBottomColor = viewModel.borderBottomColor;
+    borderStyle = viewModel.borderStyle;
     overflow = viewModel.overflow;
     boxShadow = viewModel.boxShadow;
     shadowOffsetX = viewModel.shadowOffsetX;
@@ -233,6 +260,7 @@ class RenderViewModel extends ChangeNotifier {
   @override
   bool operator ==(Object other) {
     return other is RenderViewModel &&
+        display == other.display &&
         _x == other.layoutX &&
         _y == other.layoutY &&
         width == other.width &&
@@ -255,6 +283,7 @@ class RenderViewModel extends ChangeNotifier {
         borderTopColor == other.borderTopColor &&
         borderRightColor == other.borderRightColor &&
         borderBottomColor == other.borderBottomColor &&
+        borderStyle == other.borderStyle &&
         overflow == other.overflow &&
         boxShadow == other.boxShadow &&
         shadowOffsetX == other.shadowOffsetX &&
@@ -281,6 +310,7 @@ class RenderViewModel extends ChangeNotifier {
 
   @override
   int get hashCode =>
+      display.hashCode |
       _x.hashCode |
       _y.hashCode |
       width.hashCode |
@@ -305,6 +335,7 @@ class RenderViewModel extends ChangeNotifier {
       borderTopColor.hashCode |
       borderRightColor.hashCode |
       borderBottomColor.hashCode |
+      borderStyle.hashCode |
       overflow.hashCode |
       boxShadow.hashCode |
       shadowOffsetX.hashCode |
@@ -345,7 +376,8 @@ class RenderViewModel extends ChangeNotifier {
   }
 
   NativeGestureDispatcher createDispatcher() {
-    return NativeGestureDispatcher(rootId: rootId, id: id, context: _renderContext);
+    return NativeGestureDispatcher(
+        rootId: rootId, id: id, context: _renderContext);
   }
 
   void updateLayout(double x, double y, double width, double height) {
@@ -497,7 +529,7 @@ class RenderViewModel extends ChangeNotifier {
 
   @override
   String toString() {
-    return "$name($id): (x[$_x], y[$_y], w[$_width], h[$_height])";
+    return "$idDesc: (x[$_x], y[$_y], w[$_width], h[$_height])";
   }
 
   Decoration? getDecoration({Color? backgroundColor}) {
@@ -560,7 +592,8 @@ class RenderViewModel extends ChangeNotifier {
       var angle = linearGradientMap.get<String>("angle");
       var colorStopList = linearGradientMap.get<VoltronArray>("colorStopList");
       if (angle != null && colorStopList != null) {
-        return GradientUtil.generateHippyLinearGradient(w, h, angle, colorStopList);
+        return GradientUtil.generateHippyLinearGradient(
+            w, h, angle, colorStopList);
       }
     }
     return null;
@@ -616,61 +649,51 @@ class RenderViewModel extends ChangeNotifier {
           }
         }
       });
-    } else if (localBoxShadowRadius != null &&
-        localBoxShadowColor != null) {
+    } else if (localBoxShadowRadius != null && localBoxShadowColor != null) {
       // hippy box-shadow
-      result.add(BoxShadow(
-        color: Color(localBoxShadowColor).withOpacity(localBoxShadowOpacity ?? 1),
-        offset: Offset(localBoxShadowOffsetX ?? 0, localBoxShadowOffsetY ?? 0),
-        blurRadius: localBoxShadowRadius,
-        spreadRadius: localBoxShadowSpread ?? 0.0,
-      ));
+      result.add(
+        BoxShadow(
+          color: Color(localBoxShadowColor)
+              .withOpacity(localBoxShadowOpacity ?? 1),
+          offset:
+              Offset(localBoxShadowOffsetX ?? 0, localBoxShadowOffsetY ?? 0),
+          blurRadius: localBoxShadowRadius,
+          spreadRadius: localBoxShadowSpread ?? 0.0,
+        ),
+      );
     }
     return result.isEmpty ? null : result;
   }
 
-  Decoration? toDecoration(
-      {Color? decorationColor,
-      Object? backgroundImg,
-      String? backgroundImgSize,
-      String? backgroundImgRepeat,
-      String? backgroundImgPositionX,
-      String? backgroundImgPositionY}) {
+  Decoration? toDecoration({
+    Color? decorationColor,
+    Object? backgroundImg,
+    String? backgroundImgSize,
+    String? backgroundImgRepeat,
+    String? backgroundImgPositionX,
+    String? backgroundImgPositionY,
+  }) {
     var radius = _toRadius();
     var color = decorationColor ?? backgroundColor;
     var boxShadow = _generateBoxShadow();
     var gradient = _generateGradient(backgroundImg);
-    var image = _toImage(backgroundImg, backgroundImgSize, backgroundImgRepeat,
-        backgroundImgPositionX, backgroundImgPositionY);
-
-    if (radius != null) {
-      // 有圆角的情况下，不允许设置不同的边
-      return BoxDecoration(
-        borderRadius: radius,
-        image: image,
-        color: color,
-        border: _toAllBorder(),
-        gradient: gradient,
-        boxShadow: boxShadow,
-      );
-    } else {
-      var border = _toBorder();
-      if (image == null &&
-          border == null &&
-          gradient == null &&
-          boxShadow == null) {
-        return null;
-      }
-
-      border ??= const Border.fromBorderSide(BorderSide.none);
-      return ShapeDecoration(
-        shape: border,
-        image: image,
-        color: color,
-        gradient: gradient,
-        shadows: boxShadow,
-      );
-    }
+    var image = _toImage(
+      backgroundImg,
+      backgroundImgSize,
+      backgroundImgRepeat,
+      backgroundImgPositionX,
+      backgroundImgPositionY,
+    );
+    var border = _toBorder();
+    var showRadius = radius != null && (border == null || border.isUniform);
+    return BoxDecoration(
+      borderRadius: showRadius ? radius : null,
+      image: image,
+      color: color,
+      border: border,
+      gradient: gradient,
+      boxShadow: boxShadow,
+    );
   }
 
   BorderRadius? _toRadius() {
@@ -686,10 +709,11 @@ class RenderViewModel extends ChangeNotifier {
     }
 
     return BorderRadius.only(
-        topLeft: topLeftRadius,
-        topRight: topRightRadius,
-        bottomLeft: bottomLeftRadius,
-        bottomRight: bottomRightRadius);
+      topLeft: topLeftRadius,
+      topRight: topRightRadius,
+      bottomLeft: bottomLeftRadius,
+      bottomRight: bottomRightRadius,
+    );
   }
 
   Radius _generateRadius(double? radius) {
@@ -712,7 +736,6 @@ class RenderViewModel extends ChangeNotifier {
       backgroundImgPositionX,
       backgroundImgPositionY) {
     if (backgroundImg is! String || backgroundImg == '') return null;
-    // 背景图暂时只支持网络图片
     var imgFit = resizeModeToBoxFit(backgroundImgSize);
     const alignMap = {
       'left': -1.0,
@@ -726,42 +749,49 @@ class RenderViewModel extends ChangeNotifier {
     var alignment = Alignment(alignX, alignY);
     // 背景图不为空使用背景图
     return DecorationImage(
-        alignment: alignment,
-        image: getImage(backgroundImg),
-        repeat: resizeModeToImageRepeat(backgroundImgRepeat),
-        scale: 1.0,
-        fit: imgFit);
+      alignment: alignment,
+      image: getImage(backgroundImg),
+      repeat: resizeModeToImageRepeat(backgroundImgRepeat),
+      scale: 1.0,
+      fit: imgFit,
+    );
   }
 
-  Border _toAllBorder() {
-    var side = _generateBorderSide(borderBottomWidth, borderBottomColor);
-    return Border.fromBorderSide(side);
+  BorderStyle parseBorderStyle(String? borderStyle) {
+    if (borderStyle == 'solid') {
+      return BorderStyle.solid;
+    } else if (borderStyle == 'none') {
+      return BorderStyle.none;
+    }
+    return BorderStyle.solid;
   }
 
   BorderSide _generateBorderSide(double? sideWidth, int? sideColor) {
     var originSideWidth = sideWidth;
     var originSideColor = sideColor;
-    var originBorderWidth = borderWidth;
-    var originBorderColor = borderColor;
+    var originBorderWidth = borderWidth ?? 0.0;
+    var originBorderColor = borderColor ?? 0;
 
-    if (originSideWidth != null &&
-        originSideWidth > 0 &&
-        originSideColor != null &&
-        originSideColor != Colors.transparent.value) {
-      return BorderSide(
-          width: originSideWidth,
-          color: Color(originSideColor),
-          style: BorderStyle.solid);
-    } else if (originBorderWidth != null &&
-        originBorderWidth > 0 &&
-        originBorderColor != null &&
-        originBorderColor != Colors.transparent.value) {
-      return BorderSide(
-          width: originBorderWidth,
-          color: Color(originBorderColor),
-          style: BorderStyle.solid);
+    var computedSideWidth = originBorderWidth;
+    var computedBorderColor = originBorderColor;
+
+    if (originSideWidth != null && originSideWidth > 0) {
+      computedSideWidth = originSideWidth;
     }
 
+    if (originSideColor != null && originSideColor > 0) {
+      computedBorderColor = originSideColor;
+    }
+
+    BorderStyle computedBorderStyle = parseBorderStyle(borderStyle);
+
+    if (computedSideWidth > 0 && computedBorderStyle != BorderStyle.none) {
+      return BorderSide(
+        width: computedSideWidth,
+        color: Color(computedBorderColor),
+        style: computedBorderStyle,
+      );
+    }
     return BorderSide.none;
   }
 
@@ -778,10 +808,11 @@ class RenderViewModel extends ChangeNotifier {
     }
 
     return Border(
-        top: _generateBorderSide(borderTopWidth, borderTopColor),
-        left: _generateBorderSide(borderLeftWidth, borderLeftColor),
-        bottom: _generateBorderSide(borderBottomWidth, borderBottomColor),
-        right: _generateBorderSide(borderRightWidth, borderRightColor));
+      top: _generateBorderSide(borderTopWidth, borderTopColor),
+      left: _generateBorderSide(borderLeftWidth, borderLeftColor),
+      bottom: _generateBorderSide(borderBottomWidth, borderBottomColor),
+      right: _generateBorderSide(borderRightWidth, borderRightColor),
+    );
   }
 
   bool isNoneSide(BorderSide side) {
@@ -808,10 +839,13 @@ class RenderViewModel extends ChangeNotifier {
 class Transition {
   // 动画属性名
   String transitionProperty = '';
+
   // 动画持续时间(单位：毫秒)
   int transitionDuration = 0;
+
   // 动画效果
   Curve transitionTimingFunction = Curves.ease;
+
   // 动画效果延迟时间(单位：毫秒)
   int transitionDelay = 0;
 

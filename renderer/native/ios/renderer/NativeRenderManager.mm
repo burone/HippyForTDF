@@ -19,15 +19,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 #import "NativeRenderManager.h"
 #import "HippyShadowText.h"
+#import "HippyUIManager.h"
 #import "dom/layout_node.h"
+#import "dom/dom_manager.h"
+#import "RenderVsyncManager.h"
 
+using DomValue = tdf::base::DomValue;
 using RenderManager = hippy::RenderManager;
 using DomNode = hippy::DomNode;
+using DomManager = hippy::DomManager;
 using DomEvent = hippy::DomEvent;
 using LayoutResult = hippy::LayoutResult;
 using CallFunctionCallback = hippy::CallFunctionCallback;
+
+NativeRenderManager::NativeRenderManager() {
+    uiManager_ = [[HippyUIManager alloc] init];
+}
 
 void NativeRenderManager::CreateRenderNode(std::vector<std::shared_ptr<DomNode>> &&nodes) {
     @autoreleasepool {
@@ -49,21 +59,14 @@ void NativeRenderManager::DeleteRenderNode(std::vector<std::shared_ptr<DomNode>>
 
 void NativeRenderManager::UpdateLayout(const std::vector<std::shared_ptr<DomNode>>& nodes) {
     @autoreleasepool {
-        using DomNodeUpdateInfoTuple = std::tuple<int32_t, hippy::LayoutResult, bool, std::shared_ptr<std::unordered_map<std::string, std::shared_ptr<DomValue>>>>;
+        using DomNodeUpdateInfoTuple = std::tuple<int32_t, hippy::LayoutResult>;
         std::vector<DomNodeUpdateInfoTuple> nodes_infos;
-        nodes_infos.resize(nodes.size());
+        nodes_infos.reserve(nodes.size());
         for (auto node : nodes) {
             int32_t tag = node->GetId();
             hippy::LayoutResult layoutResult = node->GetRenderLayoutResult();
-            auto extStyle = node->GetExtStyle();
-            auto it = extStyle->find("useAnimation");
-            bool useAnimation = false;
-            if (extStyle->end() != it) {
-                auto dom_value = it->second;
-                useAnimation = dom_value->ToBooleanChecked();
-            }
-            DomNodeUpdateInfoTuple nodeUpdateInfo = std::make_tuple(tag, layoutResult, useAnimation, node->GetStyleMap());
-            nodes_infos.push_back(nodeUpdateInfo);
+              DomNodeUpdateInfoTuple nodeUpdateInfo = std::make_tuple(tag, layoutResult);
+              nodes_infos.push_back(nodeUpdateInfo);
         }
         [uiManager_ updateNodesLayout:nodes_infos];
     }
@@ -75,6 +78,10 @@ void NativeRenderManager::MoveRenderNode(std::vector<int32_t>&& ids,
     @autoreleasepool {
         [uiManager_ renderMoveViews:std::move(ids) fromContainer:pid toContainer:id];
     }
+}
+
+void NativeRenderManager::MoveRenderNode(std::vector<std::shared_ptr<DomNode>>&& nodes) {
+    //TODO implement it
 }
 
 void NativeRenderManager::EndBatch() {
@@ -123,6 +130,24 @@ void NativeRenderManager::CallFunction(std::weak_ptr<DomNode> dom_node, const st
     }
 }
 
+void NativeRenderManager::RegisterExtraComponent(NSDictionary<NSString *, Class> *extraComponent) {
+    @autoreleasepool {
+        [uiManager_ registerExtraComponent:extraComponent];
+    }
+}
+
+void NativeRenderManager::RegisterRootView(UIView *view) {
+    @autoreleasepool {
+        [uiManager_ registerRootView:view];
+    }
+}
+
+void NativeRenderManager::SetDomManager(std::weak_ptr<DomManager> dom_manager) {
+    @autoreleasepool {
+        [uiManager_ setDomManager:dom_manager];
+    }
+}
+
 void NativeRenderManager::SetFrameworkProxy(id<HippyFrameworkProxy> proxy) {
     uiManager_.frameworkProxy = proxy;
 }
@@ -140,5 +165,16 @@ UIView *NativeRenderManager::CreateViewHierarchyFromDomNode(std::shared_ptr<DomN
 }
 
 UIView *NativeRenderManager::CreateViewHierarchyFromId(int32_t id) {
-    return [uiManager_ createViewRecursivelyFromHippyTag:@(id)];
+    @autoreleasepool {
+        return [uiManager_ createViewRecursivelyFromHippyTag:@(id)];
+    }
+}
+
+id<HippyRenderContext> NativeRenderManager::GetRenderContext() {
+    return uiManager_;
+}
+
+NativeRenderManager::~NativeRenderManager() {
+    [uiManager_ invalidate];
+    uiManager_ = nil;
 }

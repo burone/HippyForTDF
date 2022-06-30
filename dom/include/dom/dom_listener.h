@@ -3,9 +3,8 @@
 #include <any>
 #include <functional>
 
-#include "dom/dom_event.h"
-#include "dom/dom_listener.h"
 #include "dom/dom_argument.h"
+#include "dom/dom_event.h"
 
 namespace hippy {
 inline namespace dom {
@@ -22,7 +21,7 @@ constexpr char kLayoutEvent[] = "layout";
 constexpr char kShowEvent[] = "show";
 constexpr char kDismissEvent[] = "dismiss";
 
-using EventCallback = std::function<void(const std::shared_ptr<DomEvent>&)>;
+using EventCallback = std::function<void(std::shared_ptr<DomEvent>&)>;
 using RenderCallback = std::function<void(const std::shared_ptr<DomArgument>&)>;
 using CallFunctionCallback = std::function<void(std::shared_ptr<DomArgument>)>;
 
@@ -46,9 +45,8 @@ struct LayoutResult {
   float paddingBottom = 0;
 };
 
-enum class LayoutDiffMapKey {
-  x, y, w, h
-};
+enum class LayoutDiffMapKey { x, y, w, h };
 
-}
-}
+uint64_t FetchListenerId();
+}  // namespace dom
+}  // namespace hippy

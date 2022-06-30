@@ -24,25 +24,15 @@
 
 #import <AVFoundation/AVFoundation.h>
 #import "HippyAnimationType.h"
-#import "HippyAssert.h"
-#import "HippyBridge.h"
-#import "HippyBridge+Private.h"
 #import "HippyComponent.h"
 #import "HippyComponentData.h"
 #import "HippyConvert.h"
-#import "HippyDefines.h"
-#import "HippyEventDispatcher.h"
-#import "HippyLog.h"
-#import "HippyModuleData.h"
-#import "HippyModuleMethod.h"
 #import "HippyRootShadowView.h"
 #import "HippyShadowView.h"
 #import "HippyUtils.h"
 #import "HippyView.h"
 #import "HippyViewManager.h"
 #import "UIView+Hippy.h"
-#import "HippyAnimationViewParams.h"
-#import "HippyAnimator.h"
 #import "UIView+Private.h"
 #import "HippyMemoryOpt.h"
 #import "HippyDeviceBaseInfo.h"
@@ -50,6 +40,8 @@
 #import "UIView+HippyEvent.h"
 #import "objc/runtime.h"
 #import "UIView+Render.h"
+#import "RenderErrorHandler.h"
+#import "RenderVsyncManager.h"
 #include <mutex>
 
 using DomValue = tdf::base::DomValue;
@@ -66,9 +58,11 @@ using DomEvent = hippy::DomEvent;
 
 using HPViewBinding = std::unordered_map<int32_t, std::tuple<std::vector<int32_t>, std::vector<int32_t>>>;
 
+constexpr char kVSyncKey[] = "frameupdate";
+
 @interface HippyViewsRelation : NSObject {
     HPViewBinding _viewRelation;
-    
+
 }
 
 - (void)addViewTag:(int32_t)viewTag forSuperViewTag:(int32_t)superviewTag atIndex:(int32_t)index;
@@ -135,9 +129,9 @@ static void HippyTraverseViewNodes(id<HippyComponent> view, void (^block)(id<Hip
     }
 }
 
+#define AssertMainQueue() NSAssert(HippyIsMainQueue(), @"This function must be called on the main thread")
+
 const char *HippyUIManagerQueueName = "com.tencent.hippy.ShadowQueue";
-NSString *const HippyUIManagerWillUpdateViewsDueToContentSizeMultiplierChangeNotification
-    = @"HippyUIManagerWillUpdateViewsDueToContentSizeMultiplierChangeNotification";
 NSString *const HippyUIManagerDidRegisterRootViewNotification = @"HippyUIManagerDidRegisterRootViewNotification";
 NSString *const HippyUIManagerRootViewKey = @"HippyUIManagerRootViewKey";
 NSString *const HippyUIManagerKey = @"HippyUIManagerKey";
@@ -161,17 +155,15 @@ NSString *const HippyUIManagerDidEndBatchNotification = @"HippyUIManagerDidEndBa
     std::weak_ptr<DomManager> _domManager;
     std::mutex _shadowQueueLock;
     NSMutableDictionary<NSString *, id> *_viewManagers;
-    HippyAnimator *_animator;
+    NSDictionary<NSString *, Class> *_extraComponent;
 }
 
 @end
 
 @implementation HippyUIManager
 
-HIPPY_EXPORT_MODULE()
-
-@synthesize bridge = _bridge;
 @synthesize frameworkProxy = _frameworkProxy;
+@synthesize domManager = _domManager;
 
 #pragma mark Life cycle
 
@@ -223,25 +215,12 @@ HIPPY_EXPORT_MODULE()
 }
 
 - (void)invalidate {
-    //TODO needs Framework call invalide manually
-    /**
-     * Called on the JS Thread since all modules are invalidated on the JS thread
-     */
     _pendingUIBlocks = nil;
     [_completeBlocks removeAllObjects];
     __weak __typeof(self) weakSelf = self;
     dispatch_async(dispatch_get_main_queue(), ^{
         HippyUIManager *strongSelf = weakSelf;
         if (strongSelf) {
-            [(id<HippyInvalidating>)strongSelf->_viewRegistry[strongSelf->_rootViewTag] invalidate];
-            [strongSelf->_viewRegistry removeObjectForKey:strongSelf->_rootViewTag];
-
-            for (NSNumber *hippyTag in [strongSelf->_viewRegistry allKeys]) {
-                id<HippyComponent> subview = strongSelf->_viewRegistry[hippyTag];
-                if ([subview conformsToProtocol:@protocol(HippyInvalidating)]) {
-                    [(id<HippyInvalidating>)subview invalidate];
-                }
-            }
             strongSelf->_viewRegistry = nil;
             strongSelf->_componentTransactionListeners = nil;
             [[NSNotificationCenter defaultCenter] removeObserver:strongSelf];
@@ -263,13 +242,13 @@ HIPPY_EXPORT_MODULE()
     if (resultBlock) {
         auto domManager = _domManager.lock();
         if (domManager) {
-            auto func = [hippyTag, domManager, resultBlock](){
+            std::vector<std::function<void()>> ops_ = {[hippyTag, domManager, resultBlock](){
                 @autoreleasepool {
                     auto node = domManager->GetNode(hippyTag);
                     resultBlock(node);
                 }
-            };
-            domManager->PostTask(func);
+            }};
+            domManager->PostTask(hippy::dom::Scene(std::move(ops_)));
         }
     }
 }
@@ -295,24 +274,12 @@ HIPPY_EXPORT_MODULE()
     return [_viewRegistry copy];
 }
 
-- (HippyAnimator *)animator {
-    if (!_animator) {
-        _animator = [[HippyAnimator alloc] initWithRenderContext:self];
-    }
-    return _animator;
-}
-
-- (void)setBridge:(HippyBridge *)bridge {
-    //TODO delete all bridge code
-    _bridge = bridge;
-}
-
 - (__kindof UIView *)viewFromRenderViewTag:(NSNumber *)hippyTag {
     return [self viewForHippyTag:hippyTag];
 }
 
 - (UIView *)viewForHippyTag:(NSNumber *)hippyTag {
-    HippyAssertMainQueue();
+    AssertMainQueue();
     return _viewRegistry[hippyTag];
 }
 
@@ -349,7 +316,7 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
         HippyComponentData *componentData = _componentDataByName[viewName];
         if (!componentData) {
             HippyViewManager *viewManager = [self renderViewManagerForViewName:viewName];
-            HippyAssert(viewManager, @"No view manager found for %@", viewName);
+            NSAssert(viewManager, @"No view manager found for %@", viewName);
             if (viewManager) {
                 componentData = [[HippyComponentData alloc] initWithViewManager:viewManager viewName:viewName];
                 _componentDataByName[viewName] = componentData;
@@ -360,15 +327,15 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
     return nil;
 }
 
-- (void)registerRootView:(UIView *)rootView withSizeFlexibility:(HippyRootViewSizeFlexibility)sizeFlexibility {
-    HippyAssertMainQueue();
+- (void)registerRootView:(UIView *)rootView {
+    AssertMainQueue();
 
     NSNumber *hippyTag = rootView.hippyTag;
-    HippyAssert(HippyIsHippyRootView(hippyTag), @"View %@ with tag #%@ is not a root view", rootView, hippyTag);
+    NSAssert(HippyIsHippyRootView(hippyTag), @"View %@ with tag #%@ is not a root view", rootView, hippyTag);
 
 #if HIPPY_DEBUG
     UIView *existingView = _viewRegistry[hippyTag];
-    HippyAssert(existingView == nil || existingView == rootView, @"Expect all root views to have unique tag. Added %@ twice", hippyTag);
+    NSAssert(existingView == nil || existingView == rootView, @"Expect all root views to have unique tag. Added %@ twice", hippyTag);
 #endif
     // Register view
     _viewRegistry[hippyTag] = rootView;
@@ -387,7 +354,6 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
         shadowView.frame = frame;
         shadowView.backgroundColor = backgroundColor;
         shadowView.viewName = NSStringFromClass([rootView class]);
-        shadowView.sizeFlexibility = sizeFlexibility;
         self->_shadowViewRegistry[shadowView.hippyTag] = shadowView;
         self->_rootViewTag = hippyTag;
     });
@@ -398,75 +364,48 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
 
 
 - (void)setFrame:(CGRect)frame forView:(UIView *)view {
-    HippyAssertMainQueue();
-
-    // The following variable has no meaning if the view is not a hippy root view
-    HippyRootViewSizeFlexibility sizeFlexibility = HippyRootViewSizeFlexibilityNone;
-    BOOL isRootView = NO;
-    if (HippyIsHippyRootView(view.hippyTag)) {
-        HippyRootView *rootView = (HippyRootView *)[view superview];
-        if (rootView != nil) {
-            sizeFlexibility = rootView.sizeFlexibility;
-            isRootView = YES;
-        }
-    }
-
+    AssertMainQueue();
     NSNumber *hippyTag = view.hippyTag;
-    dispatch_async(HippyGetUIManagerQueue(), ^{
-        std::lock_guard<std::mutex> lock([self shadowQueueLock]);
-        HippyShadowView *shadowView = self->_shadowViewRegistry[hippyTag];
-        if (shadowView == nil) {
-            if (isRootView) {
+    auto domManager = _domManager.lock();
+    if (domManager) {
+        __weak id weakSelf = self;
+        std::vector<std::function<void()>> ops_ = {[hippyTag, weakSelf, frame]() {
+            if (weakSelf) {
+                HippyUIManager *strongSelf = weakSelf;
+                HippyShadowView *shadowView = strongSelf->_shadowViewRegistry[hippyTag];
+                if (shadowView == nil) {
+                    return;
+                }
+                if (!CGRectEqualToRect(frame, shadowView.frame)) {
+                    shadowView.frame = frame;
+                    [strongSelf setNeedsLayout];
+                }
             }
-            return;
-        }
-
-        BOOL needsLayout = NO;
-        if (!CGRectEqualToRect(frame, shadowView.frame)) {
-            shadowView.frame = frame;
-            needsLayout = YES;
-        }
-
-        // Trigger re-layout when size flexibility changes, as the root view might grow or
-        // shrink in the flexible dimensions.
-        if (HippyIsHippyRootView(hippyTag)) {
-            HippyRootShadowView *rootShadowView = (HippyRootShadowView *)shadowView;
-            if (rootShadowView.sizeFlexibility != sizeFlexibility) {
-                rootShadowView.sizeFlexibility = sizeFlexibility;
-                needsLayout = YES;
-            }
-        }
-
-        if (needsLayout) {
-            [self setNeedsLayout];
-        }
-    });
-}
-
-- (void)setBackgroundColor:(UIColor *)color forView:(UIView *)view {
-    HippyAssertMainQueue();
-    NSNumber *hippyTag = view.hippyTag;
-    if (!self->_viewRegistry) {
-        return;
+        }};
+        domManager->PostTask(hippy::dom::Scene(std::move(ops_)));
     }
-    dispatch_async(HippyGetUIManagerQueue(), ^{
-        std::lock_guard<std::mutex> lock([self shadowQueueLock]);
-        HippyShadowView *shadowView = self->_shadowViewRegistry[hippyTag];
-        HippyAssert(shadowView != nil, @"Could not locate root view with tag #%@", hippyTag);
-        shadowView.backgroundColor = color;
-        [self amendPendingUIBlocksWithStylePropagationUpdateForShadowView:shadowView];
-        [self flushUIBlocks];
-    });
 }
 
 /**
  * Unregisters views from registries
  */
+
+- (void)purgeViewsFromHippyTags:(NSArray<NSNumber *> *)hippyTags {
+    for (NSNumber *hippyTag in hippyTags) {
+        UIView *view = [self viewForHippyTag:hippyTag];
+        HippyTraverseViewNodes(view, ^(id<HippyComponent> subview) {
+            NSAssert(![subview isHippyRootView], @"Root views should not be unregistered");
+            [self->_viewRegistry removeObjectForKey:[subview hippyTag]];
+        });
+    }
+}
+
 - (void)purgeChildren:(NSArray<id<HippyComponent>> *)children fromRegistry:(NSMutableDictionary<NSNumber *, id<HippyComponent>> *)registry {
     for (id<HippyComponent> child in children) {
         HippyTraverseViewNodes(registry[child.hippyTag], ^(id<HippyComponent> subview) {
-            HippyAssert(![subview isHippyRootView], @"Root views should not be unregistered");
+            NSAssert(![subview isHippyRootView], @"Root views should not be unregistered");
             if ([subview conformsToProtocol:@protocol(HippyInvalidating)]) {
+                //TODO HippyInvalidating belong to hippy, remove it
                 [(id<HippyInvalidating>)subview invalidate];
             }
             [registry removeObjectForKey:subview.hippyTag];
@@ -488,7 +427,7 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
 }
 
 - (UIView *)createViewFromShadowView:(HippyShadowView *)shadowView {
-    HippyAssertMainQueue();
+    AssertMainQueue();
     HippyComponentData *componentData = [self componentDataForViewName:shadowView.viewName];
     UIView *view = [self createViewByComponentData:componentData hippyTag:shadowView.hippyTag rootTag:_rootViewTag properties:shadowView.props viewName:shadowView.viewName];
     view.renderContext = self;
@@ -497,12 +436,11 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
     for (auto &event : eventNames) {
         [self addEventNameInMainThread:event forDomNodeId:[shadowView.hippyTag intValue]];
     }
-    [shadowView clearEventNames];
     return view;
 }
 
 - (UIView *)createViewRecursivelyFromShadowView:(HippyShadowView *)shadowView {
-    HippyAssertMainQueue();
+    AssertMainQueue();
     std::lock_guard<std::mutex> lock([self shadowQueueLock]);
     [shadowView dirtyDescendantPropagation];
     return [self createViewRecursiveFromShadowViewWithNOLock:shadowView];
@@ -516,9 +454,9 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
         [view insertHippySubview:subview atIndex:index];
         index++;
     }
-    [view didUpdateHippySubviews];
     view.hippyShadowView = shadowView;
     view.renderContext = self;
+    [view clearSortedSubviews];
     [view didUpdateHippySubviews];
     NSMutableSet<HippyApplierBlock> *applierBlocks = [NSMutableSet setWithCapacity:1];
     [shadowView collectUpdatedProperties:applierBlocks parentProperties:@{}];
@@ -535,23 +473,14 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
         NSNumber *hippyTag = @(domNode->GetId());
         NSString *viewName = [NSString stringWithUTF8String:domNode->GetViewName().c_str()];
         NSString *tagName = [NSString stringWithUTF8String:domNode->GetTagName().c_str()];
-        NSDictionary *props = stylesFromDomNode(domNode);
+        NSMutableDictionary *props = [stylesFromDomNode(domNode) mutableCopy];
         HippyComponentData *componentData = [self componentDataForViewName:viewName];
         HippyShadowView *shadowView = [componentData createShadowViewWithTag:hippyTag];
         if (componentData == nil) {
-            HippyLogError(@"No component found for view with name \"%@\"", viewName);
+            //HippyLogError(@"No component found for view with name \"%@\"", viewName);
+            return @{};
         }
-        id isAnimated = props[@"useAnimation"];
-        if (isAnimated && [isAnimated isKindOfClass: [NSNumber class]]) {
-            HippyAnimator *animationModule = [self animator];
-            props = [animationModule bindAnimaiton:props viewTag: hippyTag rootTag: _rootViewTag];
-            shadowView.animated = [(NSNumber *)isAnimated boolValue];
-        } else {
-            shadowView.animated = NO;
-        }
-
-        NSMutableDictionary *newProps = [NSMutableDictionary dictionaryWithDictionary: props];
-        [newProps setValue: _rootViewTag forKey: @"rootTag"];
+        [props setValue: _rootViewTag forKey: @"rootTag"];
 
         // Register shadow view
         if (shadowView) {
@@ -559,14 +488,14 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
             shadowView.rootTag = _rootViewTag;
             shadowView.viewName = viewName;
             shadowView.tagName = tagName;
-            shadowView.props = newProps;
+            shadowView.props = props;
             shadowView.domManager = _domManager;
             shadowView.nodeLayoutResult = domNode->GetLayoutResult();
             shadowView.frame = CGRectMakeFromLayoutResult(domNode->GetLayoutResult());
-            [componentData setProps:newProps forShadowView:shadowView];
+            [componentData setProps:props forShadowView:shadowView];
             _shadowViewRegistry[hippyTag] = shadowView;
         }
-        return newProps;
+        return props;
     }
     return @{};
 }
@@ -577,7 +506,6 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
                            properties:(NSDictionary *)props
                              viewName:(NSString *)viewName {
     UIView *view = [self viewForHippyTag:hippyTag];
-
     BOOL canBeRetrievedFromCache = YES;
     if (view && [view respondsToSelector:@selector(canBeRetrievedFromViewCache)]) {
         canBeRetrievedFromCache = [view canBeRetrievedFromViewCache];
@@ -607,16 +535,6 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
     return view;
 }
 
-- (void)updateViewsFromParams:(NSArray<HippyAnimationViewParams *> *)params completion:(HippyViewUpdateCompletedBlock)block {
-    for (HippyAnimationViewParams *param in params) {
-        [self updateView:param.hippyTag viewName:nil props:param.updateParams];
-        if (block) {
-            [[self completeBlocks] addObject:block];
-        }
-    }
-    [self layoutAndMount];
-}
-
 - (void)updateView:(NSNumber *)hippyTag props:(NSDictionary *)pros {
     [self updateView:hippyTag viewName:nil props:pros];
 }
@@ -632,15 +550,6 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
         return;
     }
     HippyComponentData *componentData = [self componentDataForViewName:shadowView.viewName ? : viewName];
-    id isAnimated = props[@"useAnimation"];
-    if (isAnimated && [isAnimated isKindOfClass: [NSNumber class]]) {
-        HippyAnimator *animationModule = [self animator];
-        props = [animationModule bindAnimaiton:props viewTag:hippyTag rootTag: shadowView.rootTag];
-        shadowView.animated = [(NSNumber *)isAnimated boolValue];;
-    } else {
-        shadowView.animated = NO;
-    }
-
     NSDictionary *newProps = props;
     NSDictionary *virtualProps = props;
     if (shadowView) {
@@ -659,86 +568,9 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
     return _rootViewTag;
 }
 
-- (void)measure:(nonnull NSNumber *)hippyTag callback:(HippyResponseSenderBlock)callback {
-    [self addUIBlock:^(__unused id<HippyRenderContext> renderContext, NSDictionary<NSNumber *, UIView *> *viewRegistry) {
-        UIView *view = viewRegistry[hippyTag];
-        if (!view) {
-            // this view was probably collapsed out
-            HippyLogWarn(@"measure cannot find view with tag #%@", hippyTag);
-            callback(@[]);
-            return;
-        }
-
-        // If in a <Modal>, rootView will be the root of the modal container.
-        UIView *rootView = viewRegistry[view.rootTag];
-        if (!rootView) {
-            HippyLogWarn(@"measure cannot find view's root view with tag #%@", hippyTag);
-            callback(@[]);
-            return;
-        }
-
-        // By convention, all coordinates, whether they be touch coordinates, or
-        // measurement coordinates are with respect to the root view.
-        CGRect frame = view.frame;
-        CGPoint pagePoint = [view.superview convertPoint:frame.origin toView:rootView];
-
-        callback(@[
-                   @(frame.origin.x),
-                   @(frame.origin.y),
-                   @(frame.size.width),
-                   @(frame.size.height),
-                   @(pagePoint.x),
-                   @(pagePoint.y)
-                   ]);
-    }];
-}
-
-- (void)measureInWindow:(nonnull NSNumber *)hippyTag callback:(HippyResponseSenderBlock)callback {
-    [self addUIBlock:^(__unused id<HippyRenderContext> renderContext, NSDictionary<NSNumber *, UIView *> *viewRegistry) {
-        UIView *view = viewRegistry[hippyTag];
-        if (!view) {
-            // this view was probably collapsed out
-            HippyLogWarn(@"measure cannot find view with tag #%@", hippyTag);
-            callback(@[]);
-            return;
-        }
-        UIView *rootView = viewRegistry[view.rootTag];
-        if (!rootView) {
-            HippyLogWarn(@"measure cannot find view's root view with tag #%@", hippyTag);
-            callback(@[]);
-            return;
-        }
-
-        CGRect windowFrame = [rootView convertRect:view.frame fromView:view.superview];
-        callback(@[@{@"width":@(CGRectGetWidth(windowFrame)),
-                     @"height": @(CGRectGetHeight(windowFrame)),
-                     @"x":@(windowFrame.origin.x),
-                     @"y":@(windowFrame.origin.y)}]);
-    }];
-}
-
-- (void)measureInAppWindow:(nonnull NSNumber *)hippyTag callback:(HippyResponseSenderBlock)callback {
-    [self addUIBlock:^(__unused id<HippyRenderContext> renderContext, NSDictionary<NSNumber *, UIView *> *viewRegistry) {
-        UIView *view = viewRegistry[hippyTag];
-        if (!view) {
-            // this view was probably collapsed out
-            HippyLogWarn(@"measure cannot find view with tag #%@", hippyTag);
-            callback(@[]);
-            return;
-        }
-
-        CGRect windowFrame = [view.window convertRect:view.frame fromView:view.superview];
-        callback(@[@{@"width":@(CGRectGetWidth(windowFrame)),
-                     @"height": @(CGRectGetHeight(windowFrame)),
-                     @"x":@(windowFrame.origin.x),
-                     @"y":@(windowFrame.origin.y)}]);
-    }];
-}
-
 #pragma mark Render Context Implementation
 #define Init(Component) NSClassFromString(@#Component)
 - (__kindof HippyViewManager *)renderViewManagerForViewName:(NSString *)viewName {
-    //TODO 需要接口接收自定义ViewManager:MyView
     if (!_viewManagers) {
         _viewManagers = [@{@"View": Init(HippyViewManager),
                           @"WaterfallItem": Init(HippyWaterfallItemViewManager),
@@ -760,12 +592,16 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
                           @"Text": Init(HippyTextManager),
                           @"Modal": Init(HippyModalHostViewManager)
                  } mutableCopy];
+        if (_extraComponent) {
+            [_viewManagers addEntriesFromDictionary:_extraComponent];
+            _extraComponent = nil;
+        }
     }
     id object = [_viewManagers objectForKey:viewName];
     if (object_isClass(object)) {
         HippyViewManager *viewManager = [object new];
         viewManager.renderContext = self;
-        HippyAssert([viewManager isKindOfClass:[HippyViewManager class]], @"It must be a HippyViewManager instance");
+        NSAssert([viewManager isKindOfClass:[HippyViewManager class]], @"It must be a HippyViewManager instance");
         [_viewManagers setObject:viewManager forKey:viewName];
         object = viewManager;
     }
@@ -839,7 +675,7 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
                         block(uiManager, uiManager->_viewRegistry);
                     }
                 } @catch (NSException *exception) {
-                    HippyLogError(@"Exception thrown while executing UI block: %@", exception);
+                    //HippyLogError(@"Exception thrown while executing UI block: %@", exception);
                 }
             }
         });
@@ -868,7 +704,7 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
         [dicProps setObject:[self createShadowViewFromNode:node] forKey:@(node->GetId())];
     }
     [manager enumerateViewsHierarchy:^(int32_t tag, const std::vector<int32_t> &subviewTags, const std::vector<int32_t> &subviewIndices) {
-        HippyAssert(subviewTags.size() == subviewIndices.size(), @"subviewTags count must be equal to subviewIndices count");
+        NSAssert(subviewTags.size() == subviewIndices.size(), @"subviewTags count must be equal to subviewIndices count");
         HippyShadowView *superShadowView = self->_shadowViewRegistry[@(tag)];
         for (NSUInteger index = 0; index < subviewTags.size(); index++) {
             HippyShadowView *subShadowView = self->_shadowViewRegistry[@(subviewTags[index])];
@@ -946,37 +782,18 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
 
 - (void)renderMoveViews:(const std::vector<int32_t> &&)ids
           fromContainer:(int32_t)fromContainer toContainer:(int32_t)toContainer {
-    HippyAssert(NO, @"no implementation for this method");
+    NSAssert(NO, @"no implementation for this method");
 }
 
-- (void)updateNodesLayout:(const std::vector<std::tuple<int32_t, hippy::LayoutResult, bool,
-                           std::shared_ptr<std::unordered_map<std::string, std::shared_ptr<tdf::base::DomValue>>>>> &)layoutInfos {
+- (void)updateNodesLayout:(const std::vector<std::tuple<int32_t, hippy::LayoutResult>> &)layoutInfos {
     std::lock_guard<std::mutex> lock([self shadowQueueLock]);
     for (auto &layoutInfoTuple : layoutInfos) {
         int32_t tag = std::get<0>(layoutInfoTuple);
         NSNumber *hippyTag = @(tag);
         hippy::LayoutResult layoutResult = std::get<1>(layoutInfoTuple);
-        bool isAnimated = std::get<2>(layoutInfoTuple);
-        auto &props = std::get<3>(layoutInfoTuple);
         CGRect frame = CGRectMakeFromLayoutResult(layoutResult);
         HippyShadowView *shadowView = _shadowViewRegistry[hippyTag];
         if (shadowView) {
-            if (isAnimated) {
-                //TODO 动画需要剥离bridge
-                HippyAnimator *animationModule = [self animator];
-                NSDictionary *styleProps = unorderedMapDomValueToDictionary(props);
-                styleProps = [animationModule bindAnimaiton:styleProps viewTag:hippyTag rootTag:shadowView.rootTag];
-                shadowView.animated = isAnimated;
-                if ([styleProps objectForKey:@"height"]) {
-                    frame.size.height = [styleProps[@"height"] floatValue];
-                }
-                if ([styleProps objectForKey:@"width"]) {
-                    frame.size.width = [styleProps[@"width"] floatValue];
-                }
-
-            } else {
-                shadowView.animated = NO;
-            }
             shadowView.frame = frame;
             [self addUIBlock:^(id<HippyRenderContext> renderContext, NSDictionary<NSNumber *,__kindof UIView *> *viewRegistry) {
                 UIView *view = viewRegistry[hippyTag];
@@ -1005,18 +822,23 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
     [finalParams addObject:@(hippyTag)];
     if (DomValueType::kArray == type) {
         NSArray * paramsArray = domValueToOCType(&params);
-        HippyAssert([paramsArray isKindOfClass:[NSArray class]], @"dispatch function method params type error");
+        NSAssert([paramsArray isKindOfClass:[NSArray class]], @"dispatch function method params type error");
         if ([paramsArray isKindOfClass:[NSArray class]]) {
             for (id param in paramsArray) {
                 [finalParams addObject:param];
             }
         }
     }
+    else if (DomValueType::kNull == type) {
+
+    }
     else {
+        //TODO
+        NSAssert(NO, @"目前hippy底层会封装DomValue为Array类型。可能第三方接入者不一定会将其封装为Array");
         [finalParams addObject:[NSNull null]];
     }
     if (cb) {
-        HippyResponseSenderBlock senderBlock = ^(NSArray *senderParams) {
+        RenderUIResponseSenderBlock senderBlock = ^(id senderParams) {
             std::shared_ptr<DomArgument> domArgument = std::make_shared<DomArgument>([senderParams toDomArgument]);
             cb(domArgument);
         };
@@ -1026,28 +848,45 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
 
     HippyViewManager *viewManager = [self renderViewManagerForViewName:nativeModuleName];
     HippyComponentData *componentData = [self componentDataForViewName:nativeModuleName];
-    id<HippyBridgeMethod> method = componentData.methodsByName[name];
-    if (!method) {
+    NSValue *selectorPointer = [componentData.methodsByName objectForKey:name];
+    SEL selector = (SEL)[selectorPointer pointerValue];
+    if (!selector) {
         return nil;
     }
     @try {
-        return [method invokeWithBridge:nil module:viewManager arguments:finalParams];
-    } @catch (NSException *exception) {
-        if ([exception.name hasPrefix:HippyFatalExceptionName]) {
-            @throw exception;
+        NSMethodSignature *methodSignature = [viewManager methodSignatureForSelector:selector];
+        NSAssert(methodSignature, @"method signature creation failure");
+        NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:methodSignature];
+        [invocation setSelector:selector];
+        for (NSInteger i = 0; i < [finalParams count]; i++) {
+            id object = finalParams[i];
+            [invocation setArgument:&object atIndex:i+2];
         }
-
-        NSString *message = [NSString stringWithFormat:@"Exception '%@' was thrown while invoking %@ on component target %@ with params %@", exception, method.JSMethodName, nativeModuleName, finalParams];
+        [invocation invokeWithTarget:viewManager];
+        void *returnValue = nil;
+        if (strcmp(invocation.methodSignature.methodReturnType, "@") == 0) {
+            [invocation getReturnValue:&returnValue];
+            return (__bridge id)returnValue;
+        }
+        return nil;
+    } @catch (NSException *exception) {
+        NSString *message = [NSString stringWithFormat:@"Exception '%@' was thrown while invoking %@ on component target %@ with params %@", exception, name, nativeModuleName, finalParams];
         NSError *error = HippyErrorWithMessage(message);
-        HippyFatal(error);
+        RenderFatal(error);
         return nil;
     }
+}
+
+- (void)registerExtraComponent:(NSDictionary<NSString *, Class> *)extraComponent {
+    _extraComponent = extraComponent;
 }
 
 #pragma mark -
 #pragma mark Event Handler
 
 - (void)addEventName:(const std::string &)name forDomNodeId:(int32_t)node_id {
+    HippyShadowView *shadowView = _shadowViewRegistry[@(node_id)];
+    [shadowView addEventName:name];
     if (name == hippy::kClickEvent) {
         [self addUIBlock:^(id<HippyRenderContext> renderContext, NSDictionary<NSNumber *,__kindof UIView *> *viewRegistry) {
             HippyUIManager *uiManager = (HippyUIManager *)renderContext;
@@ -1077,6 +916,24 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
             HippyUIManager *uiManager = (HippyUIManager *)renderContext;
             [uiManager addPressEventListenerForType:name_ forView:node_id];
         }];
+    } else if (name == kVSyncKey) {
+        std::string name_ = name;
+        auto weakDomManager = self.domManager;
+        [self domNodeForHippyTag:node_id resultNode:^(std::shared_ptr<DomNode> node) {
+            if (node) {
+                NSString *vsyncKey = [NSString stringWithFormat:@"%p%d", self, node_id];
+                auto event = std::make_shared<hippy::DomEvent>(name_, node);
+                [[RenderVsyncManager sharedInstance] registerVsyncObserver:^{
+                    auto domManager = weakDomManager.lock();
+                    if (domManager) {
+                        std::function<void()> func = [node, event](){
+                            node->HandleEvent(event);
+                        };
+                        domManager->PostTask(hippy::Scene({func}));
+                    }
+                } rate:60 forKey:vsyncKey];
+            }
+        }];
     }
     else {
         std::string name_ = name;
@@ -1088,7 +945,7 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
 }
 
 - (void)addEventNameInMainThread:(const std::string &)name forDomNodeId:(int32_t)node_id {
-    HippyAssertMainQueue();
+    AssertMainQueue();
     if (name == hippy::kClickEvent) {
         [self addClickEventListenerForView:node_id];
     } else if (name == hippy::kLongClickEvent) {
@@ -1106,76 +963,85 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
 }
 
 - (void)addClickEventListenerForView:(int32_t)hippyTag {
-    HippyAssertMainThread();
+    AssertMainQueue();
     UIView *view = [self viewForHippyTag:@(hippyTag)];
     if (view) {
         BOOL canBePreventedInCapturing = [view canBePreventedByInCapturing:hippy::kClickEvent];
         BOOL canBePreventedInBubbling = [view canBePreventInBubbling:hippy::kClickEvent];
+        __weak id weakSelf = self;
         [view addViewEvent:HippyViewEventTypeClick eventListener:^(CGPoint) {
-            [self domNodeForHippyTag:hippyTag resultNode:^(std::shared_ptr<DomNode> node) {
-                if (node) {
-                    node->HandleEvent(std::make_shared<hippy::DomEvent>(hippy::kClickEvent, node,
-                                                                        canBePreventedInCapturing, canBePreventedInBubbling,
-                                                                        static_cast<std::shared_ptr<DomValue>>(nullptr)));
-                }
-            }];
+            id strongSelf = weakSelf;
+            if (strongSelf) {
+                [strongSelf domNodeForHippyTag:hippyTag resultNode:^(std::shared_ptr<DomNode> node) {
+                    if (node) {
+                        auto event = std::make_shared<hippy::DomEvent>(hippy::kClickEvent, node,
+                                                                       canBePreventedInCapturing, canBePreventedInBubbling,
+                                                                       static_cast<std::shared_ptr<DomValue>>(nullptr));
+                        node->HandleEvent(event);
+                    }
+                }];
+            }
         }];
     }
     else {
-        HippyShadowView *shadowView = _shadowViewRegistry[@(hippyTag)];
-        [shadowView addEventName:hippy::kClickEvent];
     }
 }
 
 - (void)addLongClickEventListenerForView:(int32_t)hippyTag {
-    HippyAssertMainThread();
+    AssertMainQueue();
     UIView *view = [self viewForHippyTag:@(hippyTag)];
     if (view) {
         BOOL canBePreventedInCapturing = [view canBePreventedByInCapturing:hippy::kLongClickEvent];
         BOOL canBePreventedInBubbling = [view canBePreventInBubbling:hippy::kLongClickEvent];
+        __weak id weakSelf = self;
         [view addViewEvent:HippyViewEventTypeLongClick eventListener:^(CGPoint) {
-            [self domNodeForHippyTag:hippyTag resultNode:^(std::shared_ptr<DomNode> node) {
-                if (node) {
-                    node->HandleEvent(std::make_shared<hippy::DomEvent>(hippy::kLongClickEvent, node,
-                                                                        canBePreventedInCapturing, canBePreventedInBubbling,
-                                                                        static_cast<std::shared_ptr<DomValue>>(nullptr)));
-                }
-            }];
+            id strongSelf = weakSelf;
+            if (strongSelf) {
+                [strongSelf domNodeForHippyTag:hippyTag resultNode:^(std::shared_ptr<DomNode> node) {
+                    if (node) {
+                        auto event = std::make_shared<hippy::DomEvent>(hippy::kLongClickEvent, node,
+                                                                       canBePreventedInCapturing, canBePreventedInBubbling,
+                                                                       static_cast<std::shared_ptr<DomValue>>(nullptr));
+                        node->HandleEvent(event);
+                    }
+                }];
+            }
         }];
     }
     else {
-        HippyShadowView *shadowView = _shadowViewRegistry[@(hippyTag)];
-        [shadowView addEventName:hippy::kLongClickEvent];
     }
 }
 
 - (void)addPressEventListenerForType:(const std::string &)type forView:(int32_t)hippyTag {
-    HippyAssertMainThread();
+    AssertMainQueue();
     UIView *view = [self viewForHippyTag:@(hippyTag)];
     HippyViewEventType eventType = hippy::kPressIn == type ? HippyViewEventType::HippyViewEventTypePressIn : HippyViewEventType::HippyViewEventTypePressOut;
     if (view) {
         BOOL canBePreventedInCapturing = [view canBePreventedByInCapturing:type];
         BOOL canBePreventedInBubbling = [view canBePreventInBubbling:type];
         std::string block_type = type;
+        __weak id weakSelf = self;
         [view addViewEvent:eventType eventListener:^(CGPoint) {
-            [self domNodeForHippyTag:hippyTag resultNode:^(std::shared_ptr<DomNode> node) {
-                if (node) {
-                    node->HandleEvent(std::make_shared<hippy::DomEvent>(block_type, node,
-                                                                        canBePreventedInCapturing, canBePreventedInBubbling,
-                                                                        static_cast<std::shared_ptr<DomValue>>(nullptr)));
-                }
-            }];
+            id strongSelf = weakSelf;
+            if (strongSelf) {
+                [strongSelf domNodeForHippyTag:hippyTag resultNode:^(std::shared_ptr<DomNode> node) {
+                    if (node) {
+                        auto event = std::make_shared<hippy::DomEvent>(block_type, node,
+                                                                       canBePreventedInCapturing, canBePreventedInBubbling,
+                                                                       static_cast<std::shared_ptr<DomValue>>(nullptr));
+                        node->HandleEvent(event);
+                    }
+                }];
+            }
         }];
     }
     else {
-        HippyShadowView *shadowView = _shadowViewRegistry[@(hippyTag)];
-        [shadowView addEventName:type];
     }
 }
 
 - (void)addTouchEventListenerForType:(const std::string &)type
                              forView:(int32_t)hippyTag {
-    HippyAssertMainThread();
+    AssertMainQueue();
     UIView *view = [self viewForHippyTag:@(hippyTag)];
     if (view) {
         // todo 默认值应该有个值代表未知
@@ -1192,47 +1058,53 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
         BOOL canBePreventedInCapturing = [view canBePreventedByInCapturing:type];
         BOOL canBePreventedInBubbling = [view canBePreventInBubbling:type];
         const std::string type_ = type;
+        __weak id weakSelf = self;
         [view addViewEvent:event_type eventListener:^(CGPoint point) {
-            [self domNodeForHippyTag:hippyTag resultNode:^(std::shared_ptr<DomNode> node) {
-                if (node) {
-                    tdf::base::DomValue::DomValueObjectType domValue;
-                    domValue["page_x"] = tdf::base::DomValue(point.x);
-                    domValue["page_y"] = tdf::base::DomValue(point.y);
-                    std::shared_ptr<tdf::base::DomValue> value = std::make_shared<tdf::base::DomValue>(domValue);
+            id strongSelf = weakSelf;
+            if (strongSelf) {
+                [strongSelf domNodeForHippyTag:hippyTag resultNode:^(std::shared_ptr<DomNode> node) {
                     if (node) {
-                       node->HandleEvent(std::make_shared<DomEvent>(type_, node, canBePreventedInCapturing,
-                                                                    canBePreventedInBubbling,value));
+                        tdf::base::DomValue::DomValueObjectType domValue;
+                        domValue["page_x"] = tdf::base::DomValue(point.x);
+                        domValue["page_y"] = tdf::base::DomValue(point.y);
+                        std::shared_ptr<tdf::base::DomValue> value = std::make_shared<tdf::base::DomValue>(domValue);
+                        if (node) {
+                            auto event = std::make_shared<DomEvent>(type_, node, canBePreventedInCapturing,
+                                                                    canBePreventedInBubbling,value);
+                           node->HandleEvent(event);
+                        }
                     }
-                }
-            }];
+                }];
+            }
         }];
     }
     else {
-        HippyShadowView *shadowView = _shadowViewRegistry[@(hippyTag)];
-        [shadowView addEventName:type];
     }
 }
 
 - (void)addShowEventListenerForType:(const std::string &)type forView:(int32_t)hippyTag {
-    HippyAssertMainThread();
+    AssertMainQueue();
     UIView *view = [self viewForHippyTag:@(hippyTag)];
     if (view) {
         HippyViewEventType event_type = hippy::kShowEvent == type ? HippyViewEventTypeShow : HippyViewEventTypeDismiss;
         BOOL canBePreventedInCapturing = [view canBePreventedByInCapturing:type];
         BOOL canBePreventedInBubbling = [view canBePreventInBubbling:type];
+        __weak id weakSelf = self;
         [view addViewEvent:event_type eventListener:^(CGPoint point) {
-            [self domNodeForHippyTag:hippyTag resultNode:^(std::shared_ptr<DomNode> node) {
-                if (node) {
-                    std::shared_ptr<DomValue> domValue = std::make_shared<DomValue>(true);
-                    node->HandleEvent(std::make_shared<DomEvent>(type, node, canBePreventedInCapturing,
-                                                                 canBePreventedInBubbling, domValue));
-                }
-            }];
+            id strongSelf = weakSelf;
+            if (strongSelf) {
+                [strongSelf domNodeForHippyTag:hippyTag resultNode:^(std::shared_ptr<DomNode> node) {
+                    if (node) {
+                        std::shared_ptr<DomValue> domValue = std::make_shared<DomValue>(true);
+                        auto event = std::make_shared<DomEvent>(type, node, canBePreventedInCapturing,
+                                                                canBePreventedInBubbling, domValue);
+                        node->HandleEvent(event);
+                    }
+                }];
+            }
         }];
     }
     else {
-        HippyShadowView *shadowView = _shadowViewRegistry[@(hippyTag)];
-        [shadowView addEventName:type];
     }
 }
 
@@ -1250,8 +1122,15 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
             UIView *view = [uiManager viewForHippyTag:@(hippyTag)];
             [view removeViewEvent:viewEventTypeFromName(name_)];
         }];
-    }
-    else {
+    } else if (eventName == kVSyncKey) {
+       std::string name_ = eventName;
+       [self domNodeForHippyTag:node_id resultNode:^(std::shared_ptr<DomNode> node) {
+           if (node) {
+               NSString *vsyncKey = [NSString stringWithFormat:@"%p%d", self, node_id];
+               [[RenderVsyncManager sharedInstance] unregisterVsyncObserverForKey:vsyncKey];
+           }
+       }];
+   } else {
         std::string name_ = eventName;
         [self addUIBlock:^(id<HippyRenderContext> renderContext, NSDictionary<NSNumber *,__kindof UIView *> *viewRegistry) {
             HippyUIManager *uiManager = (HippyUIManager *)renderContext;
@@ -1262,7 +1141,7 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
 }
 
 - (void)addRenderEvent:(const std::string &)name forDomNode:(int32_t)node_id {
-    HippyAssertMainQueue();
+    AssertMainQueue();
     std::string name_ = std::move(name);
     NSDictionary *componentDataByName = [_componentDataByName copy];
     UIView *view = [self viewForHippyTag:@(node_id)];
@@ -1274,21 +1153,24 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
         if (mapToEventName) {
             BOOL canBePreventedInCapturing = [view canBePreventedByInCapturing:name_];
             BOOL canBePreventedInBubbling = [view canBePreventInBubbling:name_];
+            __weak id weakSelf = self;
             [view addStatusChangeEvent:[mapToEventName UTF8String] eventCallback:^(NSDictionary *body) {
-                [self domNodeForHippyTag:node_id resultNode:^(std::shared_ptr<DomNode> domNode) {
-                    if (domNode) {
-                        DomValue value = [body toDomValue];
-                        std::shared_ptr<DomValue> domValue = std::make_shared<DomValue>(std::move(value));
-                        domNode->HandleEvent(std::make_shared<DomEvent>(name_, domNode, canBePreventedInCapturing,
-                                                                     canBePreventedInBubbling, domValue));
-                    }
-                }];
+                id strongSelf = weakSelf;
+                if (strongSelf) {
+                    [strongSelf domNodeForHippyTag:node_id resultNode:^(std::shared_ptr<DomNode> domNode) {
+                        if (domNode) {
+                            DomValue value = [body toDomValue];
+                            std::shared_ptr<DomValue> domValue = std::make_shared<DomValue>(std::move(value));
+                            auto event = std::make_shared<DomEvent>(name_, domNode, canBePreventedInCapturing,
+                                                                    canBePreventedInBubbling, domValue);
+                            domNode->HandleEvent(event);
+                        }
+                    }];
+                }
             }];
         }
     }
     else {
-        HippyShadowView *shadowView = _shadowViewRegistry[@(node_id)];
-        [shadowView addEventName:name];
     }
 }
 
@@ -1353,10 +1235,3 @@ dispatch_queue_t HippyGetUIManagerQueue(void) {
 
 @end
 
-@implementation HippyBridge (HippyUIManager)
-
-- (HippyUIManager *)uiManager {
-    return [self moduleForClass:[HippyUIManager class]];
-}
-
-@end

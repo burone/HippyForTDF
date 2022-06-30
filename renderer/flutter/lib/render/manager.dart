@@ -61,9 +61,9 @@ mixin InstanceLifeCycleDelegate {
 }
 
 mixin RenderExecutorDelegate {
-  bool _hasAddFrameCallback = false;
   bool _isDestroyed = false;
   bool _isDispatchUiFrameEnqueued = false;
+  bool _layoutBeforeFlag = false;
 
   final List<IRenderExecutor> _uiTasks = [];
   final List<IRenderExecutor> _paddingNullUiTasks = [];
@@ -103,7 +103,7 @@ mixin RenderExecutorDelegate {
   }
 
   void addNulUITask(IRenderExecutor executor) {
-    addDispatchTask(executor);
+    _paddingNullUiTasks.add(executor);
   }
 
   void addDispatchTask(IRenderExecutor executor) {
@@ -116,22 +116,18 @@ mixin RenderExecutorDelegate {
     if (!_isDispatchUiFrameEnqueued) {
       _isDispatchUiFrameEnqueued = true;
     }
-
-    postFrameCallback();
   }
 
   void postFrameCallback() {
-    if (!_hasAddFrameCallback) {
-      WidgetsFlutterBinding.ensureInitialized();
-      WidgetsBinding.instance?.addPersistentFrameCallback(doFrame);
-      _hasAddFrameCallback = true;
-    }
+    WidgetsFlutterBinding.ensureInitialized();
     if (_dispatchRunnable.isNotEmpty) {
-      WidgetsBinding.instance?.scheduleFrame();
+      WidgetsBinding.instance.addPostFrameCallback(doFrame);
+      WidgetsBinding.instance.scheduleFrame();
     }
   }
 
   void layoutBefore() {
+    _layoutBeforeFlag = true;
     _batch();
   }
 
@@ -149,17 +145,15 @@ mixin RenderExecutorDelegate {
 
     _paddingNullUiTasks.clear();
     _uiTasks.clear();
+
+    if (_dispatchRunnable.isNotEmpty) {
+      postFrameCallback();
+    }
   }
 
   void notifyDom();
 
   void flushPendingBatches() {
-    if (isPause) {
-      _isDispatchUiFrameEnqueued = false;
-    } else {
-      postFrameCallback();
-    }
-
     var iterator = _dispatchRunnable.iterator;
     var shouldBatch = _dispatchRunnable.isNotEmpty;
     var startTime = currentTimeMillis();
@@ -185,6 +179,12 @@ mixin RenderExecutorDelegate {
       deleteList.forEach(_dispatchRunnable.remove);
     }
 
+    if (isPause) {
+      _isDispatchUiFrameEnqueued = false;
+    } else {
+      postFrameCallback();
+    }
+
     if (shouldBatch) {
       doRenderBatch();
     }
@@ -199,10 +199,7 @@ class RenderManager
         InstanceLifeCycleDelegate,
         RenderExecutorDelegate,
         EventRenderDelegate
-    implements
-        Destroyable,
-        InstanceLifecycleEventListener,
-        EngineLifecycleEventListener {
+    implements Destroyable, InstanceLifecycleEventListener, EngineLifecycleEventListener {
   final List<RenderNode> _uiUpdateNodes = [];
   final List<RenderNode> _nullUiUpdateNodes = [];
   final Set<RenderNode> _updateRenderNodes = {};
@@ -212,8 +209,10 @@ class RenderManager
 
   ControllerManager get controllerManager => _controllerManager;
 
-  RenderManager(this.context, List<ViewControllerGenerator>? generators)
-      : _controllerManager = ControllerManager(context, generators) {
+  RenderManager(
+    this.context,
+    List<ViewControllerGenerator>? generators,
+  ) : _controllerManager = ControllerManager(context, generators) {
     context.addEngineLifecycleEventListener(this);
     context.addInstanceLifecycleEventListener(this);
   }
@@ -240,8 +239,7 @@ class RenderManager
     }
   }
 
-  void createNode(int instanceId, int id, int pId, int childIndex, String name,
-      VoltronMap? props) {
+  void createNode(int instanceId, int id, int pId, int childIndex, String name, VoltronMap? props) {
     // 父节点为0标识根节点，根节点id跟instanceId相同
     if (pId == 0) {
       pId = instanceId;
@@ -251,17 +249,40 @@ class RenderManager
     if (parentNode != null && tree != null) {
       var isLazy = controllerManager.isControllerLazy(name);
       var uiNode = controllerManager.createRenderNode(
-          id, props, name, tree, isLazy || parentNode.isLazyLoad);
+        id,
+        props,
+        name,
+        tree,
+        isLazy || parentNode.isLazyLoad,
+      );
       LogUtils.dRender(
-          "createNode ID:$id pID:$pId index:$childIndex className:$name finish:${uiNode.hashCode} prop:$props");
+        "createNode ID:$id pID:$pId index:$childIndex className:$name finish:${uiNode.hashCode} prop:$props",
+      );
       uiNode?.addEvent(nodeEvents(instanceId, id));
       parentNode.addChild(uiNode, childIndex);
       addUpdateNodeIfNeeded(parentNode);
       addUpdateNodeIfNeeded(uiNode);
     } else {
       LogUtils.dRender(
-          "createNode error ID:$id pID:$pId index:$childIndex className:$name, tree: ${tree?.id}, parent: ${parentNode?.id}");
+        "createNode error ID:$id pID:$pId index:$childIndex className:$name, tree: ${tree?.id}, parent: ${parentNode?.id}",
+      );
     }
+  }
+
+  VirtualNode? createVirtualNode(
+    int id,
+    int pid,
+    int index,
+    String className,
+    VoltronMap props,
+  ) {
+    return controllerManager.createVirtualNode(
+      id,
+      pid,
+      index,
+      className,
+      props,
+    );
   }
 
   void addUpdateNodeIfNeeded(RenderNode? renderNode) {
@@ -273,12 +294,12 @@ class RenderManager
   @override
   void notifyDom() {
     if (!_isDestroyed) {
+      _layoutBeforeFlag = false;
       context.bridgeManager.notifyDom();
     }
   }
 
-  void layoutAfter() {
-  }
+  void layoutAfter() {}
 
   void updateRender() {
     LogUtils.d(_kTag, "update render size: ${_updateRenderNodes.length}");
@@ -286,8 +307,8 @@ class RenderManager
       for (var node in _updateRenderNodes) {
         node.updateRender();
       }
-      _updateRenderNodes.clear();
     }
+    _updateRenderNodes.clear();
   }
 
   void addNullUINodeIfNeeded(RenderNode renderNode) {
@@ -297,13 +318,19 @@ class RenderManager
   }
 
   void updateLayout(
-      int instanceId, int id, double x, double y, double w, double h) {
+    int instanceId,
+    int id,
+    double x,
+    double y,
+    double w,
+    double h,
+  ) {
     var uiNode = controllerManager.findNode(instanceId, id);
     LogUtils.dLayout(
-        "updateLayout ID:$id, ($x, $y, $w, $h), uiNode:${uiNode?.id}, ${uiNode?.hashCode}");
+      "updateLayout ID:$id, ($x, $y, $w, $h), uiNode:${uiNode?.id}, ${uiNode?.hashCode}",
+    );
     if (uiNode != null) {
       uiNode.updateLayout(x, y, w, h);
-
       addUpdateNodeIfNeeded(uiNode);
     }
   }
@@ -311,12 +338,7 @@ class RenderManager
   int calculateLayout(int instanceId, int id, FlexLayoutParams layoutParams) {
     var node = getNode(instanceId, id);
     if (node != null) {
-      if (node.isVirtual) {
-        // text子节点不需要单独layout，父节点内部已经完成layout了
-        return layoutParams.zero();
-      }
-      var result = node.calculateLayout(layoutParams);
-      return result;
+      return node.calculateLayout(layoutParams);
     }
     return layoutParams.defaultOutput();
   }
@@ -341,8 +363,7 @@ class RenderManager
 
   RenderBox? getRenderBox(int? instanceId, int? nodeId) {
     final node = getNode(instanceId, nodeId);
-    final renderBox =
-        node?.renderViewModel.currentContext?.findRenderObject() as RenderBox?;
+    final renderBox = node?.renderViewModel.currentContext?.findRenderObject() as RenderBox?;
 
     return renderBox;
   }
@@ -373,8 +394,7 @@ class RenderManager
       for (var moveId in moveIds) {
         var renderNode = controllerManager.findNode(instanceId, moveId);
         if (renderNode != null) {
-          LogUtils.dRender(
-              "move node ID:$moveId from ${parentNode.id} to ${newParent.id}");
+          LogUtils.dRender("move node ID:$moveId from ${parentNode.id} to ${newParent.id}");
           arrayList.add(renderNode);
           parentNode.removeChild(renderNode, needRemoveChild: false);
           newParent.addChild(renderNode, i);
@@ -426,8 +446,12 @@ class RenderManager
 
       var parent = uiNode.parent;
       if (parent != null) {
-        parent.addDeleteId(id);
-        addUpdateNodeIfNeeded(parent);
+        if (uiNode.shouldCreateView) {
+          _uiUpdateNodes.remove(uiNode);
+        } else {
+          parent.addDeleteId(id);
+          addUpdateNodeIfNeeded(parent);
+        }
       } else if (uiNode.isRoot) {
         addUpdateNodeIfNeeded(uiNode);
       }
@@ -448,8 +472,8 @@ class RenderManager
     }
   }
 
-  void dispatchUIFunction(int instanceId, int id, String funcName,
-      VoltronArray array, Promise promise) {
+  void dispatchUIFunction(
+      int instanceId, int id, String funcName, VoltronArray array, Promise promise) {
     var renderNode = controllerManager.findNode(instanceId, id);
     if (renderNode != null) {
       renderNode.dispatchUIFunction(funcName, array, promise);
@@ -509,7 +533,9 @@ class RenderManager
 
     _nullUiUpdateNodes.clear();
 
-    updateRender();
+    if (!_layoutBeforeFlag) {
+      updateRender();
+    }
   }
 
   @override

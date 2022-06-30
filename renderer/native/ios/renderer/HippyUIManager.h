@@ -22,11 +22,8 @@
 
 #import <UIKit/UIKit.h>
 
-#import "HippyBridge.h"
-#import "HippyBridgeModule.h"
 #import "HippyInvalidating.h"
 #import "HippyViewManager.h"
-#import "HippyRootView.h"
 #include <memory>
 #include <unordered_map>
 #import "HippyDomNodeUtils.h"
@@ -37,7 +34,7 @@
 #import "HippyDomNodeUtils.h"
 #import "HippyRenderContext.h"
 
-@class HippyAnimationViewParams, HippyShadowView, HippyAnimator;
+@class HippyAnimationViewParams, HippyShadowView;
 
 /**
  * UIManager queue
@@ -48,12 +45,6 @@ HIPPY_EXTERN dispatch_queue_t HippyGetUIManagerQueue(void);
  * Default name for the UIManager queue
  */
 HIPPY_EXTERN const char *HippyUIManagerQueueName;
-
-/**
- * Posted right before re-render happens. This is a chance for views to invalidate their state so
- * next render cycle will pick up updated views and layout appropriately.
- */
-HIPPY_EXTERN NSString *const HippyUIManagerWillUpdateViewsDueToContentSizeMultiplierChangeNotification;
 
 /**
  * Posted whenever a new root view is registered with HippyUIManager. The userInfo property
@@ -77,13 +68,9 @@ HIPPY_EXTERN NSString *const HippyUIManagerDidEndBatchNotification;
 /**
  * The HippyUIManager is the module responsible for updating the view hierarchy.
  */
-@interface HippyUIManager : NSObject <HippyBridgeModule, HippyInvalidating, HippyRenderContext>
+@interface HippyUIManager : NSObject <HippyInvalidating, HippyRenderContext>
 
 @property(nonatomic, assign) BOOL uiCreationLazilyEnabled;
-/**
- * Register a root view with the HippyUIManager.
- */
-- (void)registerRootView:(UIView *)rootView withSizeFlexibility:(HippyRootViewSizeFlexibility)sizeFlexibility;
 
 /**
  * Gets the view associated with a hippyTag.
@@ -100,13 +87,6 @@ HIPPY_EXTERN NSString *const HippyUIManagerDidEndBatchNotification;
  * or some other layout event outside of the Hippy-managed view hierarchy.
  */
 - (void)setFrame:(CGRect)frame forView:(UIView *)view;
-
-/**
- * Update the background color of a view. The source of truth for
- * backgroundColor is the shadow view, so if to update backgroundColor from
- * native code you will need to call this method.
- */
-- (void)setBackgroundColor:(UIColor *)color forView:(UIView *)view;
 
 /**
  * Schedule a block to be executed on the UI thread. Useful if you need to execute
@@ -129,14 +109,6 @@ HIPPY_EXTERN NSString *const HippyUIManagerDidEndBatchNotification;
  * Hippy won't be aware of this, so we need to make sure it happens.
  */
 - (void)setNeedsLayout;
-
-/**
- * After core animation did finish, we need to apply view's final status.
- *
- * @param params Animation params
- * @param block Completion block
- */
-- (void)updateViewsFromParams:(NSArray<HippyAnimationViewParams *> *)params completion:(HippyViewUpdateCompletedBlock)block;
 
 /**
  *  Manually update view props ,then flush block
@@ -199,8 +171,7 @@ HIPPY_EXTERN NSString *const HippyUIManagerDidEndBatchNotification;
  *
  * @param layoutInfos Vector for nodes layout infos
  */
-- (void)updateNodesLayout:(const std::vector<std::tuple<int32_t, hippy::LayoutResult, bool,
-                           std::shared_ptr<std::unordered_map<std::string, std::shared_ptr<tdf::base::DomValue>>>>> &)layoutInfos;
+- (void)updateNodesLayout:(const std::vector<std::tuple<int32_t, hippy::LayoutResult>> &)layoutInfos;
 
 /**
  * Invoked after batched operations completed
@@ -220,6 +191,8 @@ HIPPY_EXTERN NSString *const HippyUIManagerDidEndBatchNotification;
  */
 - (id)dispatchFunction:(const std::string &)functionName viewName:(const std::string &)viewName viewTag:(int32_t)hippyTag
                   params:(const tdf::base::DomValue &)params callback:(hippy::CallFunctionCallback)cb;
+
+- (void)registerExtraComponent:(NSDictionary<NSString *, Class> *)extraComponent;
 
 /**
  * register event for specific view
@@ -255,17 +228,8 @@ HIPPY_EXTERN NSString *const HippyUIManagerDidEndBatchNotification;
 - (void)removeRenderEvent:(const std::string &)name forDomNodeId:(int32_t)node_id;
 
 /**
- * get animator
- *
- * @return animator held by HippyUIManager
+ * clear all memories
  */
-- (HippyAnimator *)animator;
-
-@end
-
-//TODO This can be removed
-@interface HippyBridge (HippyUIManager)
-
-@property (nonatomic, readonly) HippyUIManager *uiManager;
+- (void)invalidate;
 
 @end

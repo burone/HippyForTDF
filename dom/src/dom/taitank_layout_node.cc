@@ -387,6 +387,14 @@ float TaitankLayoutNode::GetBorder(Edge edge) {
   return engine_node_->result.border[css_direction];
 }
 
+float TaitankLayoutNode::GetStyleWidth() {
+  return engine_node_->style.dim[DimWidth];
+}
+
+float TaitankLayoutNode::GetStyleHeight() {
+  return engine_node_->style.dim[DimHeight];
+}
+
 bool TaitankLayoutNode::LayoutHadOverflow() {
   assert(engine_node_ != nullptr);
   return engine_node_->result.hadOverflow;
@@ -398,7 +406,7 @@ void TaitankLayoutNode::InsertChild(std::shared_ptr<LayoutNode> child, uint32_t 
   auto node = std::static_pointer_cast<TaitankLayoutNode>(child);
   assert(node->GetLayoutEngineNodeRef() != nullptr);
   engine_node_->insertChild(node->GetLayoutEngineNodeRef(), index);
-  children_.insert(children_.begin() + index, node);
+  children_.insert(children_.begin() + static_cast<int>(index), node);
   node->parent_ = shared_from_this();
 }
 

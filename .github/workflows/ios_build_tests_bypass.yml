@@ -1,0 +1,26 @@
+name: '[ios] build tests'
+
+on:
+  pull_request:
+    branches:
+      - master
+      - main
+      - v3.0-dev
+      - v3.0
+    paths-ignore:
+      - 'driver/js/ios/**'
+      - 'driver/js/core/**'
+      - 'dom/**'
+      - 'layout/engine/**'
+      - 'modules/ios/**'
+      - 'renderer/native/ios/**'
+      - 'devtools/devtools-backend/**'
+      - 'hippy.podspec'
+
+jobs:
+  ios_build_tests:
+    runs-on: macos-latest
+    steps:
+    - name: Build Test Bypass
+      run: |
+        echo "No build test required"

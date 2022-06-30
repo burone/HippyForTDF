@@ -1,8 +1,9 @@
+<!-- markdownlint-disable no-duplicate-header -->
 # 转 Web
 
 hippy-react 通过 [@hippy/react-web](//www.npmjs.com/package/@hippy/react-web) 库来将 Hippy 应用转译、运行在浏览器中。
 
-> 该项目仍在开发中，有不完善的地方，欢迎 PR。
+> @hippy/react-web 2.14.0 开始支持较为完整的转 Web 能力
 
 # 安装运行时依赖
 
@@ -10,13 +11,18 @@ hippy-react 通过 [@hippy/react-web](//www.npmjs.com/package/@hippy/react-web) 
 
 | 包名            | 说明                              |
 | --------------- | --------------------------------- |
-| bezier-easing   | hippy-react 动画在 Web 运行时需要 |
-| hippy-react-web | hippy-react 转 Web 适配器         |
-| react-dom       | react 的 Web 的渲染器             |
+| react           | react 版本 >= v16.8.0      |
+| hippy-react-web | hippy-react 转 Web 适配器    |
+| react-dom       | react 的 Web 的渲染器              |
+| animated-scroll-to | scroll 的时候添加动画            |
+| swiper          | ViewPager 需要                    |
+| @hippy/rmc-list-view   | ListView 需要                     |
+| rmc-pull-to-refresh | ListView PullHeader 需要      |
+
 
 # 编译时依赖
 
-以官方提供的 [范例工程](//github.com/Tencent/Hippy/tree/master/framework/js/examples/hippy-react-demo) 范例工程为例，需要使用 `npm i -D` 准备好以下依赖，当然开发者可以根据需要自行选择：
+以官方提供的 [范例工程](//github.com/Tencent/Hippy/tree/master/examples/hippy-react-demo) 范例工程为例，需要使用 `npm i -D` 准备好以下依赖，当然开发者可以根据需要自行选择：
 
 | 包名                | 说明                          |
 | ------------------- | ----------------------------- |
@@ -29,11 +35,11 @@ hippy-react 通过 [@hippy/react-web](//www.npmjs.com/package/@hippy/react-web) 
 
 该配置展示了将 Hippy 运行于 Web 的最小化配置，并未包含分包等内容，开发者可以自行扩展。
 
-和 hippy-react 的主要区别在于做了一个 hippy-react 到 hippy-react-web 的 [alias](//github.com/Tencent/Hippy/blob/master/framework/js/examples/hippy-react-demo/scripts/hippy-webpack.web.js#L80)，使之可以不用修改代码直接运行。
+和 hippy-react 的主要区别在于做了一个 hippy-react 到 hippy-react-web 的 [alias](//github.com/Tencent/Hippy/blob/master/examples/hippy-react-demo/scripts/hippy-webpack.web.js#L80)，使之可以不用修改代码直接运行。
 
 | 配置文件                                                     | 说明       |
 | ------------------------------------------------------------ | ---------- |
-| [hippy-webpack.web.js](//github.com/Tencent/Hippy/blob/master/framework/js/examples/hippy-react-demo/scripts/hippy-webpack.web.js) | 调试用配置 |
+| [hippy-webpack.web.js](//github.com/Tencent/Hippy/blob/master/examples/hippy-react-demo/scripts/hippy-webpack.web.js) | 调试用配置 |
 
 # 入口文件
 

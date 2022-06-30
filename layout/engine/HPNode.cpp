@@ -190,7 +190,7 @@ bool HPNode::insertChild(HPNodeRef item, uint32_t index) {
     return false;
   }
   item->setParent(this);
-  children.insert(children.begin() + index, item);
+  children.insert(children.begin() + static_cast<int>(index), item);
   markAsDirty();
   return true;
 }
@@ -223,7 +223,7 @@ bool HPNode::removeChild(uint32_t index) {
     child->setParent(nullptr);
     child->resetLayoutRecursive(false);
   }
-  children.erase(children.begin() + index);
+  children.erase(children.begin() + static_cast<int>(index));
   markAsDirty();
   return true;
 }
@@ -1515,9 +1515,6 @@ void HPNode::calculateFixedItemPosition(HPNodeRef item, FlexDirection axis) {
 // offset is 0.4 then the child's absolute offset  is 0.7. if use roundf ,
 // roundf(0.7) == 1 so we need absLeft, absTop  parameter
 void HPNode::convertLayoutResult(float absLeft, float absTop, float scaleFactor) {
-  if (!hasNewLayout()) {
-    return;
-  }
   const float left = result.position[CSSLeft];
   const float top = result.position[CSSTop];
   const float width = result.dim[DimWidth];

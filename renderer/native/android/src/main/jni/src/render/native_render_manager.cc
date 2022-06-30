@@ -22,193 +22,507 @@
 
 #include "render/native_render_manager.h"
 
-#include "dom/deserializer.h"
-#include "dom/dom_value.h"
-#include "dom/render_manager.h"
-#include "jni/jni_register.h"
-#include "render/hippy_render_manager.h"
+#include <cstdint>
+#include <iostream>
+#include <utility>
 
-using DomArgument = hippy::dom::DomArgument;
-using DomEvent = hippy::dom::DomEvent;
-using DomManager = hippy::dom::DomManager;
-using DomValue = tdf::base::DomValue;
-using HippyRenderManager = hippy::dom::HippyRenderManager;
-using RenderManager = hippy::dom::RenderManager;
+#include "base/logging.h"
+#include "core/base/common.h"
+#include "jni/jni_env.h"
 
-REGISTER_JNI("com/tencent/renderer/NativeRenderProvider",
-             "onCreateNativeRenderProvider",
-             "(F)I",
-             OnCreateNativeRenderProvider)
+constexpr char kId[] = "id";
+constexpr char kPid[] = "pId";
+constexpr char kIndex[] = "index";
+constexpr char kName[] = "name";
+constexpr char kWidth[] = "width";
+constexpr char kHeight[] = "height";
+constexpr char kLeft[] = "left";
+constexpr char kTop[] = "top";
+constexpr char kProps[] = "props";
+constexpr char kMeasureNode[] = "Text";
 
-REGISTER_JNI("com/tencent/renderer/NativeRenderProvider",
-             "onDestroyNativeRenderProvider",
-             "(I)V",
-             OnDestroyNativeRenderProvider)
+constexpr char kFontStyle[] = "fontStyle";
+constexpr char kLetterSpacing[] = "letterSpacing";
+constexpr char kColor[] = "kColor";
+constexpr char kFontSize[] = "fontSize";
+constexpr char kFontFamily[] = "fontFamily";
+constexpr char kFontWeight[] = "fontWeight";
+constexpr char kTextDecorationLine[] = "textDecorationLine";
+constexpr char kTextShadowOffset[] = "textShadowOffset";
+constexpr char kTextShadowRadius[] = "textShadowRadius";
+constexpr char kTextShadowColor[] = "textShadowColor";
+constexpr char kLineHeight[] = "lineHeight";
+constexpr char kTextAlign[] = "textAlign";
+constexpr char kText[] = "text";
+constexpr char kEnableScale[] = "enableScale";
+constexpr char kNumberOfLines[] = "numberOfLines";
 
-REGISTER_JNI("com/tencent/renderer/NativeRenderProvider",
-             "updateRootSize",
-             "(IFF)V",
-             UpdateRootSize)
+#define MARK_DIRTY_PROPERTY(STYLES, FIND_STYLE, NODE) \
+  do {                                                \
+    TDF_BASE_DCHECK(NODE != nullptr);                 \
+    if (STYLES->find(FIND_STYLE) != STYLES->end()) {  \
+      NODE->MarkDirty();                              \
+      return;                                         \
+    }                                                 \
+  } while (0)
 
-REGISTER_JNI("com/tencent/renderer/NativeRenderProvider",
-             "updateNodeSize",
-             "(IIFFZ)V",
-             UpdateNodeSize)
+namespace hippy {
+inline namespace dom {
 
-REGISTER_JNI("com/tencent/renderer/NativeRenderProvider",
-             "onReceivedEvent",
-             "(IILjava/lang/String;[BIIZZ)V",
-             OnReceivedEvent)
+static std::unordered_map<int32_t, std::shared_ptr<NativeRenderManager>> hippy_render_manager_map;
+static std::mutex mutex;
+static std::atomic<int32_t> global_hippy_render_manager_key{0};
 
-REGISTER_JNI("com/tencent/renderer/NativeRenderProvider",
-             "doCallBack",
-             "(IILjava/lang/String;IJ[BII)V",
-             DoCallBack)
-
-void NativeRenderManager::Init() {
+NativeRenderManager::NativeRenderManager(std::shared_ptr<JavaRef> render_delegate)
+    : render_delegate_(std::move(render_delegate)), serializer_(std::make_shared<tdf::base::Serializer>()) {
+  id_ = global_hippy_render_manager_key.fetch_add(1);
 }
 
-void NativeRenderManager::Destroy() {
+void NativeRenderManager::Insert(const std::shared_ptr<NativeRenderManager>& render_manager) {
+  std::lock_guard<std::mutex> lock(mutex);
+  hippy_render_manager_map[render_manager->id_] = render_manager;
 }
 
-jint OnCreateNativeRenderProvider(JNIEnv* j_env, jobject j_object, jfloat j_density) {
-  std::shared_ptr<RenderManager> render_manager = std::make_shared<HippyRenderManager>(std::make_shared<JavaRef>(j_env, j_object));
-  auto hippy_render_manager = std::static_pointer_cast<HippyRenderManager>(render_manager);
-  hippy_render_manager->SetDensity(j_density);
-  HippyRenderManager::Insert(hippy_render_manager);
-  return hippy_render_manager->GetId();
+std::shared_ptr<NativeRenderManager> NativeRenderManager::Find(int32_t id) {
+  std::lock_guard<std::mutex> lock(mutex);
+  const auto it = hippy_render_manager_map.find(id);
+  if (it == hippy_render_manager_map.end()) {
+    return nullptr;
+  }
+  return it->second;
 }
 
-void OnDestroyNativeRenderProvider(JNIEnv* j_env, jobject j_object, jint j_instance_id) {
-  HippyRenderManager::Erase(static_cast<int32_t>(j_instance_id));
+bool NativeRenderManager::Erase(int32_t id) {
+  std::lock_guard<std::mutex> lock(mutex);
+  const auto it = hippy_render_manager_map.find(id);
+  if (it == hippy_render_manager_map.end()) {
+    return false;
+  }
+  hippy_render_manager_map.erase(it);
+  return true;
 }
 
-void UpdateRootSize(JNIEnv *j_env, jobject j_object, jint j_instance_id,
-                    jfloat j_width, jfloat j_height) {
-  std::shared_ptr<HippyRenderManager> render_manager = HippyRenderManager::Find(
-          static_cast<int32_t>(j_instance_id));
-  if (!render_manager) {
-    TDF_BASE_DLOG(WARNING) << "UpdateRootSize j_instance_id invalid";
+bool NativeRenderManager::Erase(const std::shared_ptr<NativeRenderManager>& render_manager) {
+  return NativeRenderManager::Erase(render_manager->id_);
+}
+
+void NativeRenderManager::CreateRenderNode(std::vector<std::shared_ptr<hippy::dom::DomNode>>&& nodes) {
+  serializer_->Release();
+  serializer_->WriteHeader();
+
+  auto len = nodes.size();
+  tdf::base::DomValue::DomValueArrayType dom_node_array;
+  dom_node_array.resize(len);
+  for (uint32_t i = 0; i < len; i++) {
+    const auto& render_info = nodes[i]->GetRenderInfo();
+    tdf::base::DomValue::DomValueObjectType dom_node;
+    dom_node[kId] = tdf::base::DomValue(render_info.id);
+    dom_node[kPid] = tdf::base::DomValue(render_info.pid);
+    dom_node[kIndex] = tdf::base::DomValue(render_info.index);
+    dom_node[kName] = tdf::base::DomValue(nodes[i]->GetViewName());
+
+    if (nodes[i]->GetViewName() == kMeasureNode) {
+      int32_t id =  hippy::base::checked_numeric_cast<uint32_t, int32_t>(nodes[i]->GetId());
+      MeasureFunction measure_function = [this, id](float width,
+          LayoutMeasureMode width_measure_mode, float height,
+          LayoutMeasureMode height_measure_mode,
+          void* layoutContext) -> LayoutSize {
+        int64_t result;
+        this->CallNativeMeasureMethod(id, DpToPx(width), width_measure_mode,
+                                      DpToPx(height), height_measure_mode,
+                                      result);
+        LayoutSize layout_result;
+        layout_result.width = PxToDp(static_cast<float>((int32_t) (0xFFFFFFFF & (result >> 32))));
+        layout_result.height = PxToDp(static_cast<float>((int32_t) (0xFFFFFFFF & result)));
+        TDF_BASE_DLOG(INFO) << "measure width: " << (int32_t)(0xFFFFFFFF & (result >> 32))
+                            << ", height: " << (int32_t)(0xFFFFFFFF & result) << ", result: " << result;
+        return layout_result;
+      };
+      nodes[i]->GetLayoutNode()->SetMeasureFunction(measure_function);
+    }
+
+    tdf::base::DomValue::DomValueObjectType props;
+    // 样式属性
+    auto style = nodes[i]->GetStyleMap();
+    auto iter = style->begin();
+    while (iter != style->end()) {
+      props[iter->first] = *(iter->second);
+      iter++;
+    }
+
+    // 用户自定义属性
+    auto dom_ext = *nodes[i]->GetExtStyle();
+    iter = dom_ext.begin();
+    while (iter != dom_ext.end()) {
+      props[iter->first] = *(iter->second);
+      iter++;
+    }
+
+    dom_node[kProps] = props;
+    dom_node_array[i] = dom_node;
+  }
+  serializer_->WriteValue(DomValue(dom_node_array));
+  std::pair<uint8_t*, size_t> buffer_pair = serializer_->Release();
+
+  CallNativeMethod(buffer_pair, "createNode");
+}
+
+void NativeRenderManager::UpdateRenderNode(std::vector<std::shared_ptr<DomNode>>&& nodes) {
+  for (const auto& n : nodes) {
+    if (n->GetViewName() == "Text") {
+      MarkTextDirty(n->GetId());
+    }
+  }
+
+  serializer_->Release();
+  serializer_->WriteHeader();
+
+  auto len = nodes.size();
+  tdf::base::DomValue::DomValueArrayType dom_node_array;
+  dom_node_array.resize(len);
+  for (uint32_t i = 0; i < len; i++) {
+    const auto& render_info = nodes[i]->GetRenderInfo();
+    tdf::base::DomValue::DomValueObjectType dom_node;
+    dom_node[kId] = tdf::base::DomValue(render_info.id);
+    dom_node[kPid] = tdf::base::DomValue(render_info.pid);
+    dom_node[kIndex] = tdf::base::DomValue(render_info.index);
+    dom_node[kName] = tdf::base::DomValue(nodes[i]->GetViewName());
+
+    tdf::base::DomValue::DomValueObjectType props;
+    // 样式属性
+    auto style = nodes[i]->GetStyleMap();
+    auto iter = style->begin();
+    while (iter != style->end()) {
+      props[iter->first] = *(iter->second);
+      iter++;
+    }
+
+    // 用户自定义属性
+    auto dom_ext = *nodes[i]->GetExtStyle();
+    iter = dom_ext.begin();
+    while (iter != dom_ext.end()) {
+      props[iter->first] = *(iter->second);
+      iter++;
+    }
+
+    dom_node[kProps] = props;
+    dom_node_array[i] = dom_node;
+  }
+  serializer_->WriteValue(DomValue(dom_node_array));
+  std::pair<uint8_t*, size_t> buffer_pair = serializer_->Release();
+
+  CallNativeMethod(buffer_pair, "updateNode");
+}
+
+void NativeRenderManager::MoveRenderNode(std::vector<std::shared_ptr<DomNode>> &&nodes) {}
+
+void NativeRenderManager::DeleteRenderNode(std::vector<std::shared_ptr<DomNode>>&& nodes) {
+  std::shared_ptr<JNIEnvironment> instance = JNIEnvironment::GetInstance();
+  JNIEnv* j_env = instance->AttachCurrentThread();
+
+  jintArray j_int_array;
+  auto size = hippy::base::checked_numeric_cast<size_t, jint>(nodes.size());
+  j_int_array = j_env->NewIntArray(size);
+  std::vector<jint> id;
+  id.resize(nodes.size());
+  for (size_t i = 0; i < nodes.size(); i++) {
+    id[i] = hippy::base::checked_numeric_cast<uint32_t, jint>(nodes[i]->GetRenderInfo().id);
+  }
+  j_env->SetIntArrayRegion(j_int_array, 0, size, &id[0]);
+
+  jobject j_object = render_delegate_->GetObj();
+  jclass j_class = j_env->GetObjectClass(j_object);
+  if (!j_class) {
+    TDF_BASE_LOG(ERROR) << "CallNativeMethod j_class error";
     return;
   }
 
-  std::shared_ptr<DomManager> dom_manager = render_manager->GetDomManager();
-  if (dom_manager == nullptr) {
-    TDF_BASE_DLOG(WARNING) << "UpdateRootSize dom_manager is nullptr";
+  jmethodID j_method_id = j_env->GetMethodID(j_class, "deleteNode", "([I)V");
+  if (!j_method_id) {
+    TDF_BASE_LOG(ERROR) << "deleteNode j_cb_id error";
     return;
   }
-  dom_manager->SetRootSize(j_width, j_height);
-  dom_manager->DoLayout();
+
+  j_env->CallVoidMethod(j_object, j_method_id, j_int_array);
+  JNIEnvironment::ClearJEnvException(j_env);
+  j_env->DeleteLocalRef(j_int_array);
+  j_env->DeleteLocalRef(j_class);
+
 }
 
-void UpdateNodeSize(JNIEnv *j_env, jobject j_object, jint j_instance_id, jint j_node_id,
-                    jfloat j_width, jfloat j_height, jboolean j_is_sync) {
-  std::shared_ptr<HippyRenderManager> render_manager = HippyRenderManager::Find(
-          static_cast<int32_t>(j_instance_id));
-  if (!render_manager) {
-    TDF_BASE_DLOG(WARNING) << "UpdateNodeSize j_instance_id invalid";
+void NativeRenderManager::UpdateLayout(const std::vector<std::shared_ptr<DomNode>>& nodes) {
+  serializer_->Release();
+  serializer_->WriteHeader();
+
+  auto len = nodes.size();
+  tdf::base::DomValue::DomValueArrayType dom_node_array;
+  dom_node_array.resize(len);
+  for (uint32_t i = 0; i < len; i++) {
+    tdf::base::DomValue::DomValueObjectType dom_node;
+    dom_node[kId] = tdf::base::DomValue(nodes[i]->GetId());
+    const auto& result = nodes[i]->GetRenderLayoutResult();
+    dom_node[kWidth] = tdf::base::DomValue(DpToPx(result.width));
+    dom_node[kHeight] = tdf::base::DomValue(DpToPx(result.height));
+    dom_node[kLeft] = tdf::base::DomValue(DpToPx(result.left));
+    dom_node[kTop] = tdf::base::DomValue(DpToPx(result.top));
+    if (nodes[i]->GetViewName() == kMeasureNode) {
+      dom_node["paddingLeft"] = tdf::base::DomValue(DpToPx(result.paddingLeft));
+      dom_node["paddingTop"] = tdf::base::DomValue(DpToPx(result.paddingTop));
+      dom_node["paddingRight"] = tdf::base::DomValue(DpToPx(result.paddingRight));
+      dom_node["paddingBottom"] = tdf::base::DomValue(DpToPx(result.paddingBottom));
+    }
+    dom_node_array[i] = dom_node;
+  }
+  serializer_->WriteValue(DomValue(dom_node_array));
+  std::pair<uint8_t*, size_t> buffer_pair = serializer_->Release();
+
+  CallNativeMethod(buffer_pair, "updateLayout");
+}
+
+void NativeRenderManager::MoveRenderNode(std::vector<int32_t>&& moved_ids, int32_t from_pid, int32_t to_pid) {
+  std::shared_ptr<JNIEnvironment> instance = JNIEnvironment::GetInstance();
+  JNIEnv* j_env = instance->AttachCurrentThread();
+
+  jintArray j_int_array;
+  auto j_size = hippy::base::checked_numeric_cast<size_t, jint>(moved_ids.size());
+  j_int_array = j_env->NewIntArray(j_size);
+  j_env->SetIntArrayRegion(j_int_array, 0, j_size, &moved_ids[0]);
+
+  jobject j_object = render_delegate_->GetObj();
+  jclass j_class = j_env->GetObjectClass(j_object);
+  if (!j_class) {
+    TDF_BASE_LOG(ERROR) << "CallNativeMethod j_class error";
     return;
   }
 
-  std::shared_ptr<DomManager> dom_manager = render_manager->GetDomManager();
-  if (dom_manager == nullptr) {
-    TDF_BASE_DLOG(WARNING) << "UpdateNodeSize dom_manager is nullptr";
+  jmethodID j_method_id = j_env->GetMethodID(j_class, "moveNode", "([III)V");
+  if (!j_method_id) {
+    TDF_BASE_LOG(ERROR) << "moveNode j_cb_id error";
     return;
   }
-  auto node = dom_manager->GetNode(hippy::base::checked_numeric_cast<jlong, uint32_t>(j_node_id));
+
+  j_env->CallVoidMethod(j_object, j_method_id, j_int_array, to_pid, from_pid);
+  JNIEnvironment::ClearJEnvException(j_env);
+  j_env->DeleteLocalRef(j_int_array);
+  j_env->DeleteLocalRef(j_class);
+}
+
+void NativeRenderManager::EndBatch() { CallNativeMethod("endBatch"); }
+
+void NativeRenderManager::BeforeLayout(){}
+
+void NativeRenderManager::AfterLayout() {
+  // 更新布局信息前处理事件监听
+  HandleListenerOps(event_listener_ops_, "updateEventListener");
+}
+
+void NativeRenderManager::AddEventListener(std::weak_ptr<DomNode> dom_node, const std::string& name) {
+  auto node = dom_node.lock();
+  if (node) {
+    event_listener_ops_[node->GetId()].emplace_back(ListenerOp(true, dom_node, name));
+  }
+}
+
+void NativeRenderManager::RemoveEventListener(std::weak_ptr<DomNode> dom_node, const std::string& name) {
+  auto node = dom_node.lock();
+  if (node) {
+    event_listener_ops_[node->GetId()].emplace_back(ListenerOp(false, dom_node, name));
+  }
+}
+
+void NativeRenderManager::CallFunction(std::weak_ptr<DomNode> domNode, const std::string& name, const DomArgument& param,
+                                      uint32_t cb_id) {
+  std::shared_ptr<DomNode> node = domNode.lock();
   if (node == nullptr) {
-    TDF_BASE_DLOG(WARNING) << "UpdateNodeSize DomNode not found for id: " << j_node_id;
+    TDF_BASE_LOG(ERROR) << "CallJs bad node";
     return;
   }
 
-  std::unordered_map<std::string, std::shared_ptr<DomValue>> update_style;
-  std::shared_ptr<DomValue> width =
-    std::make_shared<DomValue>(hippy::base::checked_numeric_cast<jfloat, double>(j_width));
-  std::shared_ptr<DomValue> height =
-    std::make_shared<DomValue>(hippy::base::checked_numeric_cast<jfloat, double>(j_height));
-  update_style.insert({"width", width});
-  update_style.insert({"height", height});
+  std::shared_ptr<JNIEnvironment> instance = JNIEnvironment::GetInstance();
+  JNIEnv* j_env = instance->AttachCurrentThread();
 
-  node->UpdateDomNodeStyleAndParseLayoutInfo(update_style);
+  jobject j_object = render_delegate_->GetObj();
+  jclass j_class = j_env->GetObjectClass(j_object);
+  if (!j_class) {
+    TDF_BASE_LOG(ERROR) << "CallJs j_class error";
+    return;
+  }
+
+  jmethodID j_method_id = j_env->GetMethodID(j_class, "callUIFunction", "(IJLjava/lang/String;[B)V");
+  if (!j_method_id) {
+    TDF_BASE_LOG(ERROR) << "CallJs j_method_id error";
+    return;
+  }
+
+  std::vector<uint8_t> param_bson;
+  param.ToBson(param_bson);
+
+  jbyteArray j_buffer;
+  auto j_size = hippy::base::checked_numeric_cast<size_t, jint>(param_bson.size());
+  j_buffer = j_env->NewByteArray(j_size);
+  j_env->SetByteArrayRegion(reinterpret_cast<jbyteArray>(j_buffer), 0, j_size,
+                            reinterpret_cast<const jbyte*>(param_bson.data()));
+
+  jstring j_name = j_env->NewStringUTF(name.c_str());
+
+  j_env->CallVoidMethod(j_object, j_method_id, node->GetId(), (jlong)cb_id, j_name, j_buffer);
+  JNIEnvironment::ClearJEnvException(j_env);
+  j_env->DeleteLocalRef(j_buffer);
+  j_env->DeleteLocalRef(j_name);
+  j_env->DeleteLocalRef(j_class);
 }
 
-void DoCallBack(JNIEnv *j_env, jobject j_object,
-                jint j_instance_id, jint j_result, jstring j_func_name, jint j_node_id,
-                jlong j_cb_id, jbyteArray j_buffer, jint j_offset, jint j_length) {
-  std::shared_ptr<HippyRenderManager> render_manager = HippyRenderManager::Find(
-          static_cast<int32_t>(j_instance_id));
-  if (!render_manager) {
-    TDF_BASE_DLOG(WARNING) << "DoCallBack j_instance_id invalid";
+float NativeRenderManager::DpToPx(float dp) const { return dp * density_; }
+
+float NativeRenderManager::PxToDp(float px) const { return px / density_; }
+
+void NativeRenderManager::CallNativeMethod(const std::pair<uint8_t*, size_t>& buffer, const std::string& method) {
+  std::shared_ptr<JNIEnvironment> instance = JNIEnvironment::GetInstance();
+  JNIEnv* j_env = instance->AttachCurrentThread();
+
+  jobject j_buffer;
+  auto j_size = hippy::base::checked_numeric_cast<size_t, jint>(buffer.second);
+  j_buffer = j_env->NewByteArray(j_size);
+  j_env->SetByteArrayRegion(reinterpret_cast<jbyteArray>(j_buffer), 0, j_size,
+                            reinterpret_cast<const jbyte*>(buffer.first));
+
+  jobject j_object = render_delegate_->GetObj();
+  jclass j_class = j_env->GetObjectClass(j_object);
+  if (!j_class) {
+    TDF_BASE_LOG(ERROR) << "CallNativeMethod j_class error";
     return;
   }
 
-  std::shared_ptr<DomManager> dom_manager = render_manager->GetDomManager();
-  if (dom_manager == nullptr) {
-    TDF_BASE_DLOG(WARNING) << "DoCallBack dom_manager is nullptr";
-    return;
-  }
-  auto node = dom_manager->GetNode(hippy::base::checked_numeric_cast<jlong, uint32_t>(j_node_id));
-  if (node == nullptr) {
-    TDF_BASE_DLOG(WARNING) << "DoCallBack DomNode not found for id: " << j_node_id;
+  jmethodID j_method_id = j_env->GetMethodID(j_class, method.c_str(), "([B)V");
+  if (!j_method_id) {
+    TDF_BASE_LOG(ERROR) << method << " j_method_id error";
     return;
   }
 
-  jboolean is_copy = JNI_TRUE;
-  const char* func_name = j_env->GetStringUTFChars(j_func_name, &is_copy);
-  auto callback = node->GetCallback(func_name,
-                                    hippy::base::checked_numeric_cast<jlong, uint32_t>(j_cb_id));
-  if (callback == nullptr) {
-    TDF_BASE_DLOG(WARNING) << "DoCallBack Callback not found for func_name: " << func_name;
-    return;
-  }
-
-  std::shared_ptr<DomValue> params = std::make_shared<DomValue>();
-  if (j_buffer != nullptr && j_length > 0) {
-    jbyte params_buffer[j_length];
-    j_env->GetByteArrayRegion(j_buffer, j_offset, j_length, params_buffer);
-    tdf::base::Deserializer deserializer((const uint8_t*) params_buffer,
-                                         hippy::base::checked_numeric_cast<jlong, size_t>(j_length));
-    deserializer.ReadHeader();
-    deserializer.ReadObject(*params);
-  }
-  callback(std::make_shared<DomArgument>(*params));
+  j_env->CallVoidMethod(j_object, j_method_id, j_buffer);
+  JNIEnvironment::ClearJEnvException(j_env);
+  j_env->DeleteLocalRef(j_buffer);
+  j_env->DeleteLocalRef(j_class);
 }
 
-void OnReceivedEvent(JNIEnv *j_env, jobject j_object,
-                     jint j_instance_id, jint j_dom_id, jstring j_event_name,
-                     jbyteArray j_buffer, jint j_offset, jint j_length,
-                     jboolean j_use_capture, jboolean j_use_bubble) {
-  std::shared_ptr<HippyRenderManager> render_manager = HippyRenderManager::Find(
-          static_cast<int32_t>(j_instance_id));
-  if (!render_manager) {
-    TDF_BASE_DLOG(WARNING) << "OnReceivedEvent j_instance_id invalid";
+void NativeRenderManager::CallNativeMethod(const std::string& method) {
+  std::shared_ptr<JNIEnvironment> instance = JNIEnvironment::GetInstance();
+  JNIEnv* j_env = instance->AttachCurrentThread();
+
+  jobject j_object = render_delegate_->GetObj();
+  jclass j_class = j_env->GetObjectClass(j_object);
+  if (!j_class) {
+    TDF_BASE_LOG(ERROR) << "CallNativeMethod j_class error";
     return;
   }
 
-  std::shared_ptr<DomManager> dom_manager = render_manager->GetDomManager();
-  if (dom_manager == nullptr) {
-    TDF_BASE_DLOG(WARNING) << "OnReceivedEvent dom_manager is nullptr";
-    return;
-  }
-  auto node = dom_manager->GetNode(hippy::base::checked_numeric_cast<jlong, uint32_t>(j_dom_id));
-  if (node == nullptr) {
-    TDF_BASE_DLOG(WARNING) << "OnReceivedEvent DomNode not found for id: " << j_dom_id;
+  jmethodID j_method_id = j_env->GetMethodID(j_class, method.c_str(), "()V");
+  if (!j_method_id) {
+    TDF_BASE_LOG(ERROR) << method << " j_method_id error";
     return;
   }
 
-  std::shared_ptr<DomValue> params = nullptr;
-  if (j_buffer != nullptr && j_length > 0) {
-    jbyte params_buffer[j_length];
-    j_env->GetByteArrayRegion(j_buffer, j_offset, j_length, params_buffer);
-    params = std::make_shared<DomValue>();
-    tdf::base::Deserializer deserializer((const uint8_t*) params_buffer,
-                                         hippy::base::checked_numeric_cast<jlong, size_t>(j_length));
-    deserializer.ReadHeader();
-    deserializer.ReadObject(*params);
-  }
+  j_env->CallVoidMethod(j_object, j_method_id);
+  JNIEnvironment::ClearJEnvException(j_env);
+  j_env->DeleteLocalRef(j_class);
 
-  jboolean is_copy = JNI_TRUE;
-  const char* event_name = j_env->GetStringUTFChars(j_event_name, &is_copy);
-  node->HandleEvent(std::make_shared<DomEvent>(event_name, node,
-                                               (bool) j_use_capture, (bool) j_use_bubble, params));
 }
+
+void NativeRenderManager::CallNativeMeasureMethod(const int32_t id, const float width, const int32_t width_mode,
+                                                 const float height, const int32_t height_mode, int64_t& result) {
+  std::shared_ptr<JNIEnvironment> instance = JNIEnvironment::GetInstance();
+  JNIEnv* j_env = instance->AttachCurrentThread();
+
+  jobject j_object = render_delegate_->GetObj();
+  jclass j_class = j_env->GetObjectClass(j_object);
+  if (!j_class) {
+    TDF_BASE_LOG(ERROR) << "CallNativeMethod j_class error";
+    return;
+  }
+
+  jmethodID j_method_id = j_env->GetMethodID(j_class, "measure", "(IFIFI)J");
+  if (!j_method_id) {
+    TDF_BASE_LOG(ERROR) << "measure j_method_id error";
+    return;
+  }
+
+  jlong measure_result = j_env->CallLongMethod(j_object, j_method_id, id, width, width_mode, height, height_mode);
+  JNIEnvironment::ClearJEnvException(j_env);
+
+  result = static_cast<int64_t>(measure_result);
+  j_env->DeleteLocalRef(j_class);
+
+}
+
+void NativeRenderManager::HandleListenerOps(std::map<uint32_t, std::vector<ListenerOp>>& ops,
+                                            const std::string& method_name) {
+  if (ops.empty()) {
+    return;
+  }
+
+  tdf::base::DomValue::DomValueArrayType event_listener_ops;
+  for (auto iter = ops.begin(); iter != ops.end(); ++iter) {
+    tdf::base::DomValue::DomValueObjectType op;
+    tdf::base::DomValue::DomValueObjectType events;
+
+    const std::vector<ListenerOp> &listener_ops = iter->second;
+    const auto len = listener_ops.size();
+    std::vector<ListenerOp>::size_type index = 0;
+    for (; index < len; index++) {
+      const ListenerOp &listener_op = listener_ops[index];
+      std::shared_ptr<DomNode> dom_node = listener_op.dom_node.lock();
+      if (dom_node == nullptr) {
+        break;
+      }
+      events[listener_op.name] = tdf::base::DomValue(listener_op.add);
+    }
+    if (index == len) {
+      op[kId] = tdf::base::DomValue(iter->first);
+      op[kProps] = events;
+      event_listener_ops.emplace_back(op);
+    }
+  }
+
+  ops.clear();
+  if (event_listener_ops.empty()) {
+    return;
+  }
+
+  serializer_->Release();
+  serializer_->WriteHeader();
+  serializer_->WriteValue(DomValue(event_listener_ops));
+  std::pair<uint8_t*, size_t> buffer_pair = serializer_->Release();
+  CallNativeMethod(buffer_pair, method_name);
+}
+
+void NativeRenderManager::MarkTextDirty(uint32_t node_id) {
+  auto dom_manager = dom_manager_.lock();
+  TDF_BASE_DCHECK(dom_manager);
+  if (dom_manager) {
+    auto node = dom_manager->GetNode(node_id);
+    TDF_BASE_DCHECK(node);
+    if (node) {
+      auto diff_style = node->GetDiffStyle();
+      if (diff_style) {
+        MARK_DIRTY_PROPERTY(diff_style, kFontStyle, node->GetLayoutNode());
+        MARK_DIRTY_PROPERTY(diff_style, kLetterSpacing, node->GetLayoutNode());
+        MARK_DIRTY_PROPERTY(diff_style, kColor, node->GetLayoutNode());
+        MARK_DIRTY_PROPERTY(diff_style, kFontSize, node->GetLayoutNode());
+        MARK_DIRTY_PROPERTY(diff_style, kFontFamily, node->GetLayoutNode());
+        MARK_DIRTY_PROPERTY(diff_style, kFontWeight, node->GetLayoutNode());
+        MARK_DIRTY_PROPERTY(diff_style, kTextDecorationLine, node->GetLayoutNode());
+        MARK_DIRTY_PROPERTY(diff_style, kTextShadowOffset, node->GetLayoutNode());
+        MARK_DIRTY_PROPERTY(diff_style, kTextShadowRadius, node->GetLayoutNode());
+        MARK_DIRTY_PROPERTY(diff_style, kTextShadowColor, node->GetLayoutNode());
+        MARK_DIRTY_PROPERTY(diff_style, kLineHeight, node->GetLayoutNode());
+        MARK_DIRTY_PROPERTY(diff_style, kTextAlign, node->GetLayoutNode());
+        MARK_DIRTY_PROPERTY(diff_style, kText, node->GetLayoutNode());
+        MARK_DIRTY_PROPERTY(diff_style, kEnableScale, node->GetLayoutNode());
+        MARK_DIRTY_PROPERTY(diff_style, kNumberOfLines, node->GetLayoutNode());
+      }
+    }
+  }
+}
+
+}  // namespace dom
+}  // namespace hippy
