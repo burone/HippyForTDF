@@ -26,24 +26,24 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
             -fno-short-enums
             -fno-unique-section-names
             -fno-trigraphs
-            -Werror
-            -Wall
-            -Wextra
-            -Wextra-semi
-            -Wconversion
-            -Wimplicit-fallthrough
-            -Wloop-analysis
-            -Wmissing-field-initializers
-            -Wunused-local-typedefs
-            -Wstring-conversion
-            -Wthread-safety
-            -Wtautological-overlap-compare
-            -Wunreachable-code
-            -Wenum-compare-conditional
-            -Wheader-hygiene
-            -Wshadow
-            -Wno-unused-parameter
-            -Wno-trigraphs
+#            -Werror
+#            -Wall
+#            -Wextra
+#            -Wextra-semi
+#            -Wconversion
+#            -Wimplicit-fallthrough
+#            -Wloop-analysis
+#            -Wmissing-field-initializers
+#            -Wunused-local-typedefs
+#            -Wstring-conversion
+#            -Wthread-safety
+#            -Wtautological-overlap-compare
+#            -Wunreachable-code
+#            -Wenum-compare-conditional
+#            -Wheader-hygiene
+#            -Wshadow
+#            -Wno-unused-parameter
+#            -Wno-trigraphs
             --param=ssp-buffer-size=4
             -pipe
             -Os)

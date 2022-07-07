@@ -54,6 +54,7 @@ public class ListItemRenderNode extends RenderNode {
         super.updateLayout(x, y, w, h);
         View renderView = mComponentManager.mControllerRegistry.getView(mId);
         mY = renderView != null ? renderView.getTop() : 0;
+        mX = renderView != null ? renderView.getLeft() : 0;
         if (getParent() != null && mComponentManager != null && mComponentManager.getRenderManager()
                 != null) { // 若屏幕内node更新引起了item整体变化，需要通知ListView发起dispatchLayout重排版
             RenderManager renderManager = mComponentManager.getRenderManager();

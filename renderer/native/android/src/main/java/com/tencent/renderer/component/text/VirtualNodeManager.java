@@ -95,7 +95,7 @@ public class VirtualNodeManager {
             if (!(value instanceof Boolean)) {
                 continue;
             }
-            if ((Boolean) value) {
+            if ((Boolean) value && (!"layout".equals(key)) && (!"attachedtowindow".equals(key))) {
                 node.addGesture(key);
             } else {
                 node.removeGesture(key);
