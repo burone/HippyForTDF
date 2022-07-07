@@ -21,6 +21,6 @@ class PagerChangeMonitor implements OnPageChangeListener {
     public void onPageSelected(int position) {
         Map<String, Object> params = new HashMap<>();
         params.put(PAGE_ITEM_POSITION, position);
-        EventUtils.send(targetView, EventUtils.EVENT_VIEW_PAGE_SELECTED, params);
+        EventUtils.sendComponentEvent(targetView, EventUtils.EVENT_PAGE_SELECTED, params);
     }
 }
