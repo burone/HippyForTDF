@@ -2,7 +2,7 @@
 
 #include <map>
 
-#include "Yoga.h"
+#include "yoga/Yoga.h"
 #include "footstone/logging.h"
 #include "dom/node_props.h"
 
@@ -344,7 +344,7 @@ void YogaLayoutNode::InsertChild(std::shared_ptr<LayoutNode> child, uint32_t ind
   if (YGNodeHasMeasureFunc(yoga_node_)) return;
   auto node = std::static_pointer_cast<YogaLayoutNode>(child);
   YGNodeInsertChild(yoga_node_, node->GetLayoutEngineNodeRef(), index);
-  children_.insert(children_.begin() + index, node);
+  children_.insert(children_.begin() + (int)index, node);
   node->parent_ = shared_from_this();
 }
 
