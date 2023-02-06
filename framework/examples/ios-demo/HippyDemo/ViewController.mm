@@ -24,24 +24,27 @@
 #import "HippyBundleURLProvider.h"
 #import "HippyDemoLoader.h"
 #import "HippyJSEnginesMapper.h"
+#import "HippyJSExecutor.h"
 #import "HippyRedBox.h"
 #import "HPAsserts.h"
 #import "HPDefaultImageProvider.h"
 #import "HPLog.h"
-#import "HPRenderFrameworkProxy.h"
 #import "TypeConverter.h"
+#import "NativeRenderImpl.h"
 #import "NativeRenderManager.h"
 #import "NativeRenderRootView.h"
 #import "UIView+NativeRender.h"
 #import "ViewController.h"
+#import "HPOCToHippyValue.h"
 
 #include "dom/dom_manager.h"
 #include "dom/dom_node.h"
+#include "driver/scope.h"
 #include "footstone/hippy_value.h"
 
 static NSString *const engineKey = @"Demo";
 
-@interface ViewController ()<HippyBridgeDelegate, HPRenderFrameworkProxy, HippyMethodInterceptorProtocol> {
+@interface ViewController ()<HippyBridgeDelegate, HippyMethodInterceptorProtocol> {
     std::shared_ptr<hippy::DomManager> _domManager;
     std::shared_ptr<NativeRenderManager> _nativeRenderManager;
     std::shared_ptr<hippy::RootNode> _rootNode;
@@ -105,11 +108,11 @@ static NSString *const engineKey = @"Demo";
 
     [self setupBridge:bridge rootView:rootView bundleURLs:bundleURLs props:@{@"isSimulator": @(isSimulator)}];
     //set custom vfs loader
-    bridge.uriLoader = std::make_shared<HippyDemoLoader>();
     bridge.sandboxDirectory = sandboxDirectory;
     bridge.contextName = @"Demo";
     bridge.moduleName = @"Demo";
     bridge.methodInterceptor = self;
+    [bridge addImageProviderClass:[HPDefaultImageProvider class]];
     rootView.autoresizingMask = UIViewAutoresizingFlexibleHeight | UIViewAutoresizingFlexibleWidth;
     [self.view addSubview:rootView];
     
@@ -133,19 +136,19 @@ static NSString *const engineKey = @"Demo";
     
     //Create NativeRenderManager
     _nativeRenderManager = std::make_shared<NativeRenderManager>();
-    //Set frameproxy for render manager
-    _nativeRenderManager->SetFrameworkProxy(bridge);
     //set dom manager
     _nativeRenderManager->SetDomManager(domManager);
-    
+    //set image provider for native render manager
+    _nativeRenderManager->AddImageProviderClass([HPDefaultImageProvider class]);
+    //set vfs for bridge & native render manager
+    RegisterVFSLoaderForBridge(bridge, _nativeRenderManager);
     //set rendermanager for dommanager
     domManager->SetRenderManager(_nativeRenderManager);
     //bind rootview and root node
     _nativeRenderManager->RegisterRootView(rootView, rootNode);
-    id<HPRenderContext> renderContext = _nativeRenderManager->GetRenderContext();
     
     //setup necessary params for bridge
-    [bridge setupDomManager:domManager rootNode:rootNode renderContext:renderContext];
+    [bridge setupDomManager:domManager rootNode:rootNode];
     [bridge loadBundleURLs:bundleURLs];
     [bridge loadInstanceForRootView:rootTag withProperties:props];
     
@@ -159,7 +162,7 @@ static NSString *const engineKey = @"Demo";
     //1.remove root view from UI hierarchy
     [[[self.view subviews] firstObject] removeFromSuperview];
     //2.unregister root node from render context by id.
-    [_bridge.renderContext unregisterRootViewFromTag:@(_rootNode->GetId())];
+    _nativeRenderManager->UnregisterRootView(_rootNode->GetId());
     //3.set elements holding by user to nil
     _rootNode = nil;
 }
@@ -185,6 +188,22 @@ static NSString *const engineKey = @"Demo";
     [self setupBridge:bridge rootView:rootView bundleURLs:bundleURLs props:@{@"isSimulator": @(isSimulator)}];
     rootView.autoresizingMask = UIViewAutoresizingFlexibleHeight | UIViewAutoresizingFlexibleWidth;
     [self.view addSubview:rootView];
+}
+
+- (void)invalidateForReason:(HPInvalidateReason)reason bridge:(HippyBridge *)bridge {
+    [_nativeRenderManager->rootViews() enumerateObjectsUsingBlock:^(UIView * _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
+        if ([obj respondsToSelector:@selector(invalidate)]) {
+            [obj performSelector:@selector(invalidate)];
+        }
+        NSDictionary *param = @{@"id": [obj componentTag]};
+        footstone::value::HippyValue value = [param toHippyValue];
+        std::shared_ptr<footstone::value::HippyValue> domValue = std::make_shared<footstone::value::HippyValue>(value);
+        bridge.javaScriptExecutor.pScope->UnloadInstance(domValue);
+    }];
+}
+
+- (void)removeRootNode:(NSNumber *)rootTag bridge:(HippyBridge *)bridge {
+    _nativeRenderManager->UnregisterRootView([rootTag intValue]);
 }
 
 #define StatusBarOffset 20
@@ -285,12 +304,22 @@ std::string mock;
         _domManager->PostTask(hippy::Scene({func}));
 
         _nativeRenderManager = std::make_shared<NativeRenderManager>();
-        _nativeRenderManager->SetFrameworkProxy(self);
         _nativeRenderManager->RegisterRootView(rootView, _rootNode);
         _nativeRenderManager->SetDomManager(_domManager);
 
         _domManager->SetRenderManager(_nativeRenderManager);
     }
+}
+
+static std::unordered_map<std::string, std::shared_ptr<footstone::HippyValue>> dictionaryToUnorderedMapDomValue(NSDictionary *dictionary) {
+    std::unordered_map<std::string, std::shared_ptr<footstone::value::HippyValue>> style;
+    for (NSString *key in dictionary) {
+        id value = dictionary[key];
+        std::string style_key = [key UTF8String];
+        footstone::value::HippyValue dom_value = [value toHippyValue];
+        style[style_key] = std::make_shared<footstone::value::HippyValue>(std::move(dom_value));
+    }
+    return style;
 }
 
 - (std::vector<std::shared_ptr<hippy::DomNode>>) mockNodesData {
@@ -366,20 +395,6 @@ std::string mock;
     return bridge.debugMode;
 }
 
-#pragma mark HPRenderFrameworkProxy Delegate Implementation
-- (NSString *)standardizeAssetUrlString:(NSString *)UrlString forRenderContext:(nonnull id<NativeRenderContext>)renderContext {
-    //这里将对应的URL转换为标准URL
-    //比如将相对地址根据沙盒路径为转换绝对地址
-    return UrlString;
-}
-
-- (Class<HPImageProviderProtocol>)imageProviderClassForRenderContext:(id<NativeRenderContext>)renderContext {
-    //设置HPImageProviderProtocol类。
-    //HPImageProviderProtocol负责将NSData转换为UIImage，用于处理ios系统无法处理的图片格式数据
-    //默认使用NativeRenderDefaultImageProvider
-    return [HPDefaultImageProvider class];
-}
-
 - (BOOL)shouldInvokeWithModuleName:(NSString *)moduleName methodName:(NSString *)methodName arguments:(NSArray<id<HippyBridgeArgument>> *)arguments argumentsValues:(NSArray *)argumentsValue containCallback:(BOOL)containCallback {
     HPAssert(moduleName, @"module name must not be null");
     HPAssert(methodName, @"method name must not be null");
@@ -393,7 +408,7 @@ std::string mock;
 }
 
 - (std::shared_ptr<VFSUriLoader>)URILoader {
-    return _bridge.uriLoader;
+    return [_bridge VFSUriLoader].lock();
 }
 
 @end

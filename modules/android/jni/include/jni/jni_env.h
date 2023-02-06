@@ -33,15 +33,6 @@ inline namespace jni {
 
 class JNIEnvironment {
  public:
-  struct JNIWrapper {
-    jmethodID j_call_natives_direct_method_id = nullptr;
-    jmethodID j_call_natives_method_id = nullptr;
-    jmethodID j_report_exception_method_id = nullptr;
-    jmethodID j_inspector_channel_method_id = nullptr;
-    jmethodID j_fetch_resource_method_id = nullptr;
-  };
-
- public:
   static std::shared_ptr<JNIEnvironment> GetInstance();
   static bool ClearJEnvException(JNIEnv* env);
   static void DestroyInstance();
@@ -49,8 +40,7 @@ class JNIEnvironment {
   JNIEnvironment() = default;
   ~JNIEnvironment() = default;
 
-  inline JNIWrapper GetMethods() { return wrapper_; }
-  void init(JavaVM* vm, JNIEnv* env);
+  jint JNI_OnLoad(JavaVM* vm, __unused void* reserved);
   JNIEnv* AttachCurrentThread();
 
   void setJavaVM(JavaVM* vm);
@@ -60,7 +50,6 @@ class JNIEnvironment {
   static std::mutex mutex_;
 
   JavaVM* j_vm_;
-  JNIWrapper wrapper_;
 };
 
 }

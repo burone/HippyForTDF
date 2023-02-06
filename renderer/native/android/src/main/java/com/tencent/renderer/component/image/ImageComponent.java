@@ -22,6 +22,7 @@ import static com.tencent.renderer.utils.EventUtils.EVENT_IMAGE_LOAD_PROGRESS;
 import static com.tencent.renderer.utils.EventUtils.EVENT_IMAGE_LOAD_START;
 import static com.tencent.renderer.utils.EventUtils.EVENT_IMAGE_ON_LOAD;
 
+import android.graphics.drawable.Drawable;
 import android.text.TextUtils;
 
 import androidx.annotation.ColorInt;
@@ -29,14 +30,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.Px;
 
-import com.tencent.link_supplier.proxy.framework.ImageDataSupplier;
-import com.tencent.link_supplier.proxy.framework.ImageLoaderAdapter;
-import com.tencent.link_supplier.proxy.framework.ImageRequestListener;
-import com.tencent.mtt.hippy.dom.node.NodeProps;
-import com.tencent.renderer.NativeRender;
-import com.tencent.renderer.NativeRenderer;
 import com.tencent.renderer.node.RenderNode;
-import com.tencent.mtt.hippy.utils.PixelUtil;
 import com.tencent.renderer.component.Component;
 import com.tencent.renderer.component.drawable.ContentDrawable.ScaleType;
 
@@ -46,7 +40,6 @@ import com.tencent.vfs.UrlUtils;
 import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.Executor;
 
 public class ImageComponent extends Component {
 
@@ -55,13 +48,13 @@ public class ImageComponent extends Component {
     @Nullable
     private String mDefaultUri;
     @Nullable
-    private ImageLoaderAdapter mImageLoaderAdapter;
+    private ImageLoaderAdapter mImageLoader;
     @Nullable
     private String mBundlePath;
     @Nullable
-    private ImageDataSupplier mImageData;
+    private ImageDataSupplier mImageHolder;
     @Nullable
-    private ImageDataSupplier mDefaultImageData;
+    private ImageDataSupplier mDefaultImageHolder;
     private ImageFetchState mImageFetchState = ImageFetchState.UNLOAD;
     private ImageFetchState mDefaultImageFetchState = ImageFetchState.UNLOAD;
 
@@ -87,7 +80,7 @@ public class ImageComponent extends Component {
     }
 
     private void init(@NonNull RenderNode node, @Nullable Component component) {
-        mImageLoaderAdapter = node.getNativeRender().getImageLoaderAdapter();
+        mImageLoader = node.getNativeRender().getImageLoader();
         mBundlePath = node.getNativeRender().getBundlePath();
         if (component != null) {
             mBackgroundDrawable = component.getBackgroundDrawable();
@@ -98,11 +91,11 @@ public class ImageComponent extends Component {
     }
 
     private void fetchImageIfNeeded() {
-        if ((mDefaultImageData == null || !mDefaultImageData.checkImageData())
+        if ((mDefaultImageHolder == null || !mDefaultImageHolder.checkImageData())
                 && mDefaultImageFetchState == ImageFetchState.UNLOAD) {
             fetchImageWithUrl(mDefaultUri, ImageSourceType.DEFAULT);
         }
-        if ((mImageData == null || !mImageData.checkImageData())
+        if ((mImageHolder == null || !mImageHolder.checkImageData())
                 && mImageFetchState == ImageFetchState.UNLOAD) {
             fetchImageWithUrl(mUri, ImageSourceType.SRC);
         }
@@ -124,15 +117,15 @@ public class ImageComponent extends Component {
     @Override
     public void clear() {
         super.clear();
-        if (mImageData != null) {
-            mImageData.detached();
-            mImageData.clear();
-            mImageData = null;
+        if (mImageHolder != null) {
+            mImageHolder.detached();
+            mImageHolder.clear();
+            mImageHolder = null;
         }
-        if (mDefaultImageData != null) {
-            mDefaultImageData.detached();
-            mDefaultImageData.clear();
-            mDefaultImageData = null;
+        if (mDefaultImageHolder != null) {
+            mDefaultImageHolder.detached();
+            mDefaultImageHolder.clear();
+            mDefaultImageHolder = null;
         }
     }
 
@@ -175,31 +168,37 @@ public class ImageComponent extends Component {
     }
 
     protected void onFetchImageStart() {
-        mImageFetchState = ImageFetchState.LOADING;
         if (mHostRef.get() != null) {
             // send onLoadStart event
             EventUtils.sendComponentEvent(mHostRef.get(), EVENT_IMAGE_LOAD_START, null);
         }
     }
 
+    private void setImageData(@NonNull ImageDataSupplier imageHolder) {
+        Drawable drawable = imageHolder.getDrawable();
+        if (drawable != null) {
+            drawable.setCallback(this);
+        }
+        ensureContentDrawable().setImageData(imageHolder);
+    }
+
     private void onFetchImageSuccess(@NonNull String uri, ImageSourceType sourceType,
-            @NonNull ImageDataSupplier imageData, boolean loadFromCache) {
+            @NonNull ImageDataSupplier imageHolder, boolean loadFromCache) {
         if (sourceType == ImageSourceType.SRC) {
             if (!uri.equals(mUri)) {
                 return;
             }
-            mImageData = imageData;
+            mImageHolder = imageHolder;
             mImageFetchState = ImageFetchState.LOADED;
-            ensureContentDrawable().setContentBitmap(imageData.getBitmap());
-            ensureContentDrawable().setGifMovie(imageData.getGifMovie());
+            setImageData(imageHolder);
             if (mHostRef.get() != null && !loadFromCache) {
                 // send onLoad event
                 EventUtils.sendComponentEvent(mHostRef.get(), EVENT_IMAGE_ON_LOAD, null);
                 HashMap<String, Object> params = new HashMap<>();
                 params.put("success", 1);
                 HashMap<String, Object> imageSize = new HashMap<>();
-                imageSize.put("width", imageData.getImageWidth());
-                imageSize.put("height", imageData.getImageHeight());
+                imageSize.put("width", imageHolder.getImageWidth());
+                imageSize.put("height", imageHolder.getImageHeight());
                 params.put("image", imageSize);
                 // send onLoadEnd event
                 EventUtils.sendComponentEvent(mHostRef.get(), EVENT_IMAGE_LOAD_END, params);
@@ -208,18 +207,13 @@ public class ImageComponent extends Component {
             if (!uri.equals(mDefaultUri)) {
                 return;
             }
-            mDefaultImageData = imageData;
+            mDefaultImageHolder = imageHolder;
             mDefaultImageFetchState = ImageFetchState.LOADED;
-            if (mImageData == null || !mImageData.checkImageData()) {
-                ensureContentDrawable().setContentBitmap(imageData.getBitmap());
+            if (mImageHolder == null || !mImageHolder.checkImageData()) {
+                setImageData(imageHolder);
             }
         }
-        // Only bitmap decoded inside the SDK need to be cached
-        if (!loadFromCache && imageData.isRecyclable()) {
-            assert mImageLoaderAdapter != null;
-            mImageLoaderAdapter.saveImageToCache(imageData);
-        }
-        imageData.attached();
+        imageHolder.attached();
         postInvalidateDelayed(0);
     }
 
@@ -246,22 +240,24 @@ public class ImageComponent extends Component {
         EventUtils.sendComponentEvent(mHostRef.get(), EVENT_IMAGE_LOAD_PROGRESS, params);
     }
 
-    private void doFetchLocalImage(final String uri, final ImageSourceType sourceType) {
+    private void doFetchImage(final String uri, final ImageSourceType sourceType) {
         int width = (mHostRef.get() != null) ? mHostRef.get().getWidth() : 0;
         int height = (mHostRef.get() != null) ? mHostRef.get().getHeight() : 0;
-        Executor executor = null;
-        assert mImageLoaderAdapter != null;
+        Map<String, Object> params = new HashMap<>();
         if (mHostRef.get() != null) {
-            NativeRender nativeRender = mHostRef.get().getNativeRender();
-            executor = nativeRender.getBackgroundExecutor();
+            params.put("props", mHostRef.get().getProps());
         }
-        mImageLoaderAdapter.getLocalImage(uri, new ImageRequestListener() {
+        assert mImageLoader != null;
+        mImageLoader.fetchImageAsync(uri, new ImageRequestListener() {
             @Override
             public void onRequestStart(ImageDataSupplier imageData) {
             }
 
             @Override
-            public void onRequestProgress(float total, float loaded) {
+            public void onRequestProgress(long total, long loaded) {
+                if (sourceType == ImageSourceType.SRC) {
+                    onFetchImageProgress(total, loaded);
+                }
             }
 
             @Override
@@ -277,69 +273,28 @@ public class ImageComponent extends Component {
                     mDefaultImageFetchState = ImageFetchState.UNLOAD;
                 }
             }
-        }, executor, width, height);
-    }
-
-    private void doFetchRemoteImage(final String uri, final ImageSourceType sourceType) {
-        Map<String, Object> params = new HashMap<>();
-        if (mHostRef.get() != null) {
-            params.put("props", mHostRef.get().getProps());
-        }
-        assert mImageLoaderAdapter != null;
-        mImageLoaderAdapter.fetchImage(uri, new ImageRequestListener() {
-            @Override
-            public void onRequestStart(ImageDataSupplier imageData) {
-            }
-
-            @Override
-            public void onRequestProgress(float total, float loaded) {
-                if (sourceType == ImageSourceType.SRC) {
-                    onFetchImageProgress(total, loaded);
-                }
-            }
-
-            @Override
-            public void onRequestSuccess(ImageDataSupplier imageData) {
-                // Should check the remote request data returned from the host, if the data is
-                // invalid, the request is considered to have failed
-                if (imageData.checkImageData()) {
-                    onFetchImageSuccess(uri, sourceType, imageData, false);
-                } else {
-                    onRequestFail(null);
-                }
-            }
-
-            @Override
-            public void onRequestFail(Throwable throwable) {
-                if (sourceType == ImageSourceType.SRC) {
-                    onFetchImageFail();
-                } else {
-                    mDefaultImageFetchState = ImageFetchState.UNLOAD;
-                }
-            }
-        }, params);
+        }, params, width, height);
     }
 
     private void fetchImageWithUrl(String uri, ImageSourceType sourceType) {
-        if (TextUtils.isEmpty(uri) || mImageLoaderAdapter == null) {
+        if (TextUtils.isEmpty(uri) || mImageLoader == null) {
             return;
         }
-        ImageDataSupplier imageData = mImageLoaderAdapter.getImageFromCache(uri);
-        if (imageData != null) {
+        ImageDataSupplier imageData = mImageLoader.getImageFromCache(uri);
+        if (imageData != null && imageData.checkImageData()) {
             onFetchImageSuccess(uri, sourceType, imageData, true);
             return;
         }
         if (sourceType == ImageSourceType.SRC) {
+            mImageFetchState = ImageFetchState.LOADING;
             onFetchImageStart();
         } else {
             mDefaultImageFetchState = ImageFetchState.LOADING;
         }
         if (UrlUtils.isWebUrl(uri)) {
-            String tempUrl = uri.trim().replaceAll(" ", "%20");
-            doFetchRemoteImage(tempUrl, sourceType);
-        } else {
-            doFetchLocalImage(uri, sourceType);
+            uri = uri.trim().replaceAll(" ", "%20");
         }
+        doFetchImage(uri, sourceType);
     }
 
     private String convertToLocalPathIfNeeded(String uri) {

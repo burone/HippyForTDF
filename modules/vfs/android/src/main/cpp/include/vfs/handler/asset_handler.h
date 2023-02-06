@@ -41,28 +41,28 @@ class AssetHandler : public UriHandler {
   AssetHandler() = default;
   virtual ~AssetHandler() = default;
 
-  inline void SetAAssetManager(JNIEnv* j_env, jobject j_aasset_manager) {
-    auto  aasset_manager = AAssetManager_fromJava(j_env, j_aasset_manager);
-    aasset_manager_ = aasset_manager;
-  }
+  static void Init(JNIEnv* j_env);
+  static void Destroy(JNIEnv* j_env);
 
   inline void SetWorkerTaskRunner(std::weak_ptr<TaskRunner> runner) {
     runner_ = runner;
   }
 
   virtual void RequestUntrustedContent(
-      std::shared_ptr<SyncContext> ctx,
+      std::shared_ptr<RequestJob> request,
+      std::shared_ptr<JobResponse> response,
       std::function<std::shared_ptr<UriHandler>()> next) override;
   virtual void RequestUntrustedContent(
-      std::shared_ptr<ASyncContext> ctx,
+      std::shared_ptr<RequestJob> request,
+      std::function<void(std::shared_ptr<JobResponse>)> cb,
       std::function<std::shared_ptr<UriHandler>()> next) override;
  private:
   void LoadByAsset(const string_view& path,
-                   std::shared_ptr<ASyncContext> ctx,
+                   std::shared_ptr<RequestJob> request,
+                   std::function<void(std::shared_ptr<JobResponse>)> cb,
                    std::function<std::shared_ptr<UriHandler>()> next,
                    bool is_auto_fill = false);
 
-  AAssetManager* aasset_manager_;
   std::weak_ptr<TaskRunner> runner_;
 };
 

@@ -31,7 +31,7 @@
 #include "footstone/logging.h"
 #include "footstone/task_runner.h"
 
-#if defined(ENABLE_INSPECTOR) && !defined(V8_WITHOUT_INSPECTOR)
+#if defined(ENABLE_INSPECTOR) && defined(JS_V8) && !defined(V8_WITHOUT_INSPECTOR)
 #include "driver/runtime/v8/inspector/v8_inspector_client_impl.h"
 #endif
 
@@ -41,7 +41,7 @@ inline namespace driver {
 
 class Scope;
 
-class Engine {
+class Engine: public std::enable_shared_from_this<Engine> {
  public:
   using RegisterMap = hippy::base::RegisterMap;
   using VM = hippy::napi::VM;
@@ -49,12 +49,14 @@ class Engine {
   using RegisterFunction = hippy::base::RegisterFunction;
   using TaskRunner = footstone::TaskRunner;
 
-  Engine(
+  Engine();
+  virtual ~Engine();
+
+  void AsyncInit(
       std::shared_ptr<TaskRunner> js,
       std::shared_ptr<TaskRunner> worker,
       std::unique_ptr<RegisterMap> map = std::make_unique<RegisterMap>(),
       const std::shared_ptr<VMInitParam>& param = nullptr);
-  virtual ~Engine();
 
   void Enter();
   void Exit();
@@ -68,7 +70,7 @@ class Engine {
   inline std::shared_ptr<TaskRunner> GetWorkerTaskRunner() {
     return worker_task_runner_;
   }
-#if defined(ENABLE_INSPECTOR) && !defined(V8_WITHOUT_INSPECTOR)
+#if defined(ENABLE_INSPECTOR) && defined(JS_V8) && !defined(V8_WITHOUT_INSPECTOR)
   inline void SetInspectorClient(std::shared_ptr<hippy::inspector::V8InspectorClientImpl> inspector_client) {
     inspector_client_ = inspector_client;
   }
@@ -85,9 +87,8 @@ class Engine {
   std::shared_ptr<TaskRunner> worker_task_runner_;
   std::shared_ptr<VM> vm_;
   std::unique_ptr<RegisterMap> map_;
-  std::mutex cnt_mutex_;
   uint32_t scope_cnt_;
-#if defined(ENABLE_INSPECTOR) && !defined(V8_WITHOUT_INSPECTOR)
+#if defined(ENABLE_INSPECTOR) && defined(JS_V8) && !defined(V8_WITHOUT_INSPECTOR)
   std::shared_ptr<hippy::inspector::V8InspectorClientImpl> inspector_client_;
 #endif
 };

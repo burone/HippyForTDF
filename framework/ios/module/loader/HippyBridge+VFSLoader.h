@@ -26,15 +26,12 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface HippyBridge (VFSLoader)
 
-- (void)loadContentsAsynchronouslyFromUrl:(NSURL *_Nonnull)url
-                                   params:(NSDictionary *_Nullable)params
+- (void)loadContentsAsynchronouslyFromUrl:(NSString *)urlString
+                                   method:(NSString *_Nullable)method
+                                   params:(NSDictionary<NSString *, NSString *> *_Nullable)httpHeaders
+                                     body:(NSData *_Nullable)body
+                                 progress:(void(^ _Nullable)(NSUInteger current, NSUInteger total))progress
                         completionHandler:(void (^)(NSData *_Nullable data, NSURLResponse *_Nullable response, NSError *_Nullable error))completionHandler;
-
-- (NSData *)loadContentsSynchronouslyFromUrl:(NSURL *)url
-                                      params:(NSDictionary *)params
-                           returningResponse:(NSURLResponse * _Nullable * _Nullable)response
-                                       error:(NSError *_Nullable * _Nullable)error;
-
 @end
 
 NS_ASSUME_NONNULL_END

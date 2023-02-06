@@ -26,23 +26,24 @@
 #import "HippyBridgeModule.h"
 #import "HippyMethodInterceptorProtocol.h"
 #import "HippyModulesSetup.h"
+#import "HPImageProviderProtocol.h"
 #import "HPInvalidating.h"
-#import "HPRenderContext.h"
-#import "HPRenderFrameworkProxy.h"
 #import "MacroDefines.h"
 
 #include <memory>
-#include "dom/animation/animation_manager.h"
-#include "dom/dom_manager.h"
-#include "dom/render_manager.h"
-#include "footstone/worker_manager.h"
-#include "vfs/uri_loader.h"
 
 @class HippyPerformanceLogger;
 @class HippyJSExecutor;
 @class HippyModuleData;
 
 class VFSUriLoader;
+
+namespace hippy {
+inline namespace dom {
+class DomManager;
+class RootNode;
+};
+};
 
 /**
  * Indicate hippy sdk version
@@ -81,7 +82,7 @@ HP_EXTERN NSString *HippyBridgeModuleNameForClass(Class bridgeModuleClass);
 /**
  * Async batched bridge used to communicate with the JavaScript application.
  */
-@interface HippyBridge : NSObject <HPInvalidating, HPRenderFrameworkProxy>
+@interface HippyBridge : NSObject <HPInvalidating>
 
 @property (nonatomic, weak, readonly) id<HippyBridgeDelegate> delegate;
 
@@ -89,6 +90,7 @@ HP_EXTERN NSString *HippyBridgeModuleNameForClass(Class bridgeModuleClass);
 
 /**
  *  Create A HippyBridge instance
+ *
  *  @param delegate bridge delegate
  *  @param block for user-defined module
  *  @param launchOptions launch options, will not be sent to frontend
@@ -102,11 +104,17 @@ HP_EXTERN NSString *HippyBridgeModuleNameForClass(Class bridgeModuleClass);
 
 /**
  * Context name for HippyBridge
+ *
  * @discussion Context name will be shown on safari development menu.
- *  only for JSC engine
+ * only for JSC engine
  */
 @property(nonatomic, copy)NSString *contextName;
 
+/**
+ * Set module name
+ *
+ *@discussion module name will show in error infomation
+ */
 @property (nonatomic, strong) NSString *moduleName;
 
 /**
@@ -114,26 +122,35 @@ HP_EXTERN NSString *HippyBridgeModuleNameForClass(Class bridgeModuleClass);
  */
 @property (nonatomic, strong, readonly) NSURL *bundleURL;
 
+/**
+ * Set debug url for devtools
+ */
 @property (nonatomic, strong, readonly) NSURL *debugURL;
 
 /**
  *  Load js bundles from urls
+ *
  *  @param bundleURLs Bundles urls
+ *  @discussion HippyBridge makes sure bundles will be loaded in order.
  */
 - (void)loadBundleURLs:(NSArray<NSURL *> *)bundleURLs;
 
-@property (nonatomic, weak) id<HPRenderFrameworkProxy> frameworkProxy;
-@property (nonatomic, weak) id<HPRenderContext> renderContext;
+@property(nonatomic, assign)std::weak_ptr<VFSUriLoader> VFSUriLoader;
+
+/**
+ * Image provider method
+ * Users adds or obtains image providers in the following methods
+ */
+- (void)addImageProviderClass:(Class<HPImageProviderProtocol>)cls;
+- (NSArray<Class<HPImageProviderProtocol>> *)imageProviderClasses;
 
 /**
  * Set basic configuration for native render
  * @param domManager DomManager
  * @param rootNode RootNode
- * @param renderContext HPRenderContext instance
  */
 - (void)setupDomManager:(std::shared_ptr<hippy::DomManager>)domManager
-               rootNode:(std::weak_ptr<hippy::RootNode>)rootNode
-          renderContext:(id<HPRenderContext>)renderContext;
+               rootNode:(std::weak_ptr<hippy::RootNode>)rootNode;
 
 /**
  *  Load instance for root view and show views
@@ -141,12 +158,6 @@ HP_EXTERN NSString *HippyBridgeModuleNameForClass(Class bridgeModuleClass);
  *  @param props Initial parameters for instance.
  */
 - (void)loadInstanceForRootView:(NSNumber *)rootTag withProperties:(NSDictionary *)props;
-
-/**
- * Set URI loader for Hippy instance
- * Default handler is HippyDefaultUriHandler
- */
-@property(nonatomic, assign)std::shared_ptr<VFSUriLoader> uriLoader;
 
 /**
  * Access the underlying JavaScript executor. You can use this in unit tests to detect
@@ -268,6 +279,6 @@ HP_EXTERN NSString *HippyBridgeModuleNameForClass(Class bridgeModuleClass);
 
 @end
 
-extern void HippyBridgeFatal(NSError *, HippyBridge *);
+HP_EXTERN void HippyBridgeFatal(NSError *, HippyBridge *);
 
-extern void HippyBridgeHandleException(NSException *exception, HippyBridge *bridge);
+HP_EXTERN void HippyBridgeHandleException(NSException *exception, HippyBridge *bridge);

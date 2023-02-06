@@ -39,12 +39,12 @@ import android.text.style.UnderlineSpan;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
-import com.tencent.link_supplier.proxy.framework.FontAdapter;
 import com.tencent.mtt.hippy.annotation.HippyControllerProps;
 import com.tencent.mtt.hippy.dom.node.NodeProps;
 import com.tencent.mtt.hippy.utils.I18nUtil;
 import com.tencent.mtt.hippy.utils.PixelUtil;
 import com.tencent.renderer.NativeRender;
+import com.tencent.renderer.component.text.FontAdapter;
 import com.tencent.renderer.component.text.TextForegroundColorSpan;
 import com.tencent.renderer.component.text.TextGestureSpan;
 import com.tencent.renderer.component.text.TextLetterSpacingSpan;
@@ -462,27 +462,28 @@ public class TextVirtualNode extends VirtualNode {
         final TextPaint textPaint = getTextPaint();
         Layout layout;
         BoringLayout.Metrics boring = BoringLayout.isBoring(mSpanned, textPaint);
-        float desiredWidth = Layout.getDesiredWidth(mSpanned, textPaint);
         boolean unconstrainedWidth = (widthMode == FlexMeasureMode.UNDEFINED) || width < 0;
         if (boring != null && (unconstrainedWidth || boring.width <= width)) {
             layout = BoringLayout
                     .make(mSpanned, textPaint, boring.width, mAlignment,
                             getLineSpacingMultiplier(), mLineSpacingExtra, boring, true);
         } else {
-            if (!unconstrainedWidth && desiredWidth > width) {
+            float desiredWidth = Layout.getDesiredWidth(mSpanned, textPaint);
+            if (!unconstrainedWidth && (widthMode == FlexMeasureMode.EXACTLY
+                || desiredWidth > width)) {
                 desiredWidth = width;
             }
             layout = buildStaticLayout(mSpanned, textPaint, (int) Math.ceil(desiredWidth));
-        }
-        if (mNumberOfLines > 0 && layout.getLineCount() > mNumberOfLines) {
-            int lastLineStart = layout.getLineStart(mNumberOfLines - 1);
-            int lastLineEnd = layout.getLineEnd(mNumberOfLines - 1);
-            if (lastLineStart < lastLineEnd) {
-                int measureWidth = (int) Math.ceil(unconstrainedWidth ? desiredWidth : width);
-                try {
-                    layout = truncateLayoutWithNumberOfLine(layout, measureWidth, mNumberOfLines);
-                } catch (Exception e) {
-                    e.printStackTrace();
+            if (mNumberOfLines > 0 && layout.getLineCount() > mNumberOfLines) {
+                int lastLineStart = layout.getLineStart(mNumberOfLines - 1);
+                int lastLineEnd = layout.getLineEnd(mNumberOfLines - 1);
+                if (lastLineStart < lastLineEnd) {
+                    int measureWidth = (int) Math.ceil(unconstrainedWidth ? desiredWidth : width);
+                    try {
+                        layout = truncateLayoutWithNumberOfLine(layout, measureWidth, mNumberOfLines);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
                 }
             }
         }

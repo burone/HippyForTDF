@@ -16,23 +16,25 @@
 package com.tencent.mtt.hippy.devsupport;
 
 import android.content.Context;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 @SuppressWarnings("unused")
 public interface DevServerInterface {
 
-  void reload();
+    void reload();
 
-  String createResourceUrl(String resName);
+    String createResourceUrl(String resName);
 
-  void loadRemoteResource(String url, DevServerCallBack serverCallBack);
+    void onLoadResourceFailed(@NonNull String url, @Nullable String errorMessage);
 
-  String createDebugUrl(String host, String componentName, String debugClientId);
+    String createDebugUrl(String host, String componentName, String debugClientId);
 
-  void setDevServerCallback(DevServerCallBack devServerCallback);
+    void setDevServerCallback(DevServerCallBack devServerCallback);
 
-  void attachToHost(Context context);
+    void attachToHost(Context context, int rootId);
 
-  void detachFromHost(Context context);
+    void detachFromHost(Context context, int rootId);
 
-  void handleException(Throwable throwable);
+    void handleException(Throwable throwable);
 }

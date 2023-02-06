@@ -1,10 +1,10 @@
-include 'renderer-native'
-project(':renderer-native').projectDir = new File('renderer/native/android')
+import java.nio.file.Paths
 
-if (ENABLE_TDF_RENDER == "true") {
-    include 'renderer-tdf'
-    project(':renderer-tdf').projectDir = new File('renderer/tdf/android')
-}
+include 'connector-support'
+project(':connector-support').projectDir = new File('framework/android/connector/support')
+
+include 'connector-dom'
+project(':connector-dom').projectDir = new File('framework/android/connector/dom')
 
 include 'hippy-support'
 project(':hippy-support').projectDir = new File('modules/android/hippy_support')
@@ -15,11 +15,36 @@ project(':hippy-framework').projectDir = new File('framework/android')
 include 'serialization'
 project(':serialization').projectDir = new File('modules/android/serialization')
 
-include 'link_supplier'
-project(':link_supplier').projectDir = new File('modules/android/link_supplier')
-
 include 'vfs'
 project(':vfs').projectDir = new File('modules/vfs/android')
 
+include 'devtools-integration'
+project(':devtools-integration').projectDir = new File('devtools/devtools-integration/android')
+
 include 'example'
 project(':example').projectDir = new File('framework/examples/android-demo')
+
+def modules = MODULES.split(',')
+for (String module : modules) {
+    String path = module.trim()
+    def subSettingGradle
+    if (Paths.get(path).isAbsolute()) {
+        ArrayList<String> paths = module.split('/')
+        paths.remove(0)
+        def subProjectName = paths.join('-')
+        subSettingGradle = path + '/settings.gradle'
+        include "$subProjectName"
+        project(":$subProjectName").projectDir = new File(path)
+    } else {
+        def subProjectName = 'connector-' + module.replace("/", "-")
+        def projectPath = 'framework/android/connector/' + path
+        subSettingGradle = projectPath + '/settings.gradle'
+        include "$subProjectName"
+        project(":$subProjectName").projectDir = new File(projectPath)
+    }
+    File target = file(subSettingGradle)
+    if (target.exists()) {
+        apply from: "./$subSettingGradle"
+    }
+}
+

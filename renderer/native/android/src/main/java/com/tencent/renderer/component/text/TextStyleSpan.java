@@ -13,11 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.tencent.renderer.component.text;
 
 import android.text.TextPaint;
 import android.text.style.MetricAffectingSpan;
-import com.tencent.link_supplier.proxy.framework.FontAdapter;
 
 public class TextStyleSpan extends MetricAffectingSpan {
 

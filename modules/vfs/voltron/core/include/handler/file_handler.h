@@ -23,8 +23,7 @@
 #include "vfs/handler/uri_handler.h"
 #include "footstone/task_runner.h"
 
-namespace hippy {
-inline namespace vfs {
+namespace voltron {
 
 class FileHandler : public hippy::UriHandler {
  public:
@@ -33,23 +32,25 @@ class FileHandler : public hippy::UriHandler {
   FileHandler() = default;
   virtual ~FileHandler() = default;
 
-  inline void SetWorkerTaskRunner(std::weak_ptr<TaskRunner> runner) {
+  void SetWorkerTaskRunner(std::weak_ptr<TaskRunner> runner) {
     runner_ = runner;
   }
 
   virtual void RequestUntrustedContent(
-      std::shared_ptr<SyncContext> ctx,
+      std::shared_ptr<hippy::RequestJob> request,
+      std::shared_ptr<hippy::JobResponse> response,
       std::function<std::shared_ptr<UriHandler>()> next) override;
   virtual void RequestUntrustedContent(
-      std::shared_ptr<ASyncContext> ctx,
+      std::shared_ptr<hippy::RequestJob> request,
+      std::function<void(std::shared_ptr<hippy::JobResponse>)> cb,
       std::function<std::shared_ptr<UriHandler>()> next) override;
  private:
-  void LoadByFile(const std::string &path,
-                  std::shared_ptr<ASyncContext> ctx,
-                  std::function<std::shared_ptr<UriHandler>()> next);
+  void LoadByFile(const std::string& path,
+                  std::shared_ptr<hippy::RequestJob> request,
+                  std::function<void(std::shared_ptr<hippy::JobResponse>)> cb,
+                  const std::function<std::shared_ptr<UriHandler>()>& next);
 
   std::weak_ptr<TaskRunner> runner_;
 };
 
-}
 }

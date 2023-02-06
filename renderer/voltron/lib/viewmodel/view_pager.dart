@@ -19,6 +19,7 @@
 //
 
 import 'package:flutter/widgets.dart';
+import 'package:voltron_renderer/controller.dart';
 
 import '../common.dart';
 import '../render.dart';
@@ -33,6 +34,11 @@ class ViewPagerRenderViewModel extends GroupViewModel {
   String overflow = '';
   bool bounces = true;
   bool isVertical = false;
+
+  /// event listener enable
+  bool onPageSelectedEventEnable = false;
+  bool onPageScrollEventEnable = false;
+  bool onPageScrollStateChangedEventEnable = false;
 
   bool firstRender = true;
 
@@ -147,10 +153,10 @@ class ViewPagerRenderViewModel extends GroupViewModel {
   void setScrollState(String pageScrollState) {
     var params = VoltronMap();
     params.push("pageScrollState", pageScrollState);
-    context.bridgeManager.sendComponentEvent(
+    context.renderBridgeManager.sendComponentEvent(
       rootId,
       id,
-      "pageScrollStateChanged",
+      ViewPagerController.kEventOnPageScrollStateChanged,
       params,
     );
   }
@@ -158,10 +164,10 @@ class ViewPagerRenderViewModel extends GroupViewModel {
   void onPageSelect(int page) {
     var params = VoltronMap();
     params.push("position", page);
-    context.bridgeManager.sendComponentEvent(
+    context.renderBridgeManager.sendComponentEvent(
       rootId,
       id,
-      "pageSelected",
+      ViewPagerController.kEventOnPageSelected,
       params,
     );
   }
@@ -170,10 +176,10 @@ class ViewPagerRenderViewModel extends GroupViewModel {
     var params = VoltronMap();
     params.push("position", position);
     params.push("offset", offset);
-    context.bridgeManager.sendComponentEvent(
+    context.renderBridgeManager.sendComponentEvent(
       rootId,
       id,
-      "pageScroll",
+      ViewPagerController.kEventOnPageScroll,
       params,
     );
   }

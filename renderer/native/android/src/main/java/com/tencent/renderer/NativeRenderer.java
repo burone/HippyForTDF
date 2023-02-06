@@ -34,20 +34,19 @@ import androidx.annotation.MainThread;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.tencent.link_supplier.proxy.framework.FontAdapter;
-import com.tencent.link_supplier.proxy.framework.FrameworkProxy;
-import com.tencent.link_supplier.proxy.framework.ImageLoaderAdapter;
-import com.tencent.link_supplier.proxy.framework.JSFrameworkProxy;
-import com.tencent.link_supplier.proxy.renderer.NativeRenderProxy;
-import com.tencent.link_supplier.proxy.renderer.Renderer;
 import com.tencent.mtt.hippy.common.Callback;
 import com.tencent.mtt.hippy.serialization.nio.reader.BinaryReader;
 import com.tencent.mtt.hippy.serialization.nio.reader.SafeHeapReader;
 import com.tencent.mtt.hippy.serialization.nio.writer.SafeHeapWriter;
 import com.tencent.mtt.hippy.serialization.string.InternalizedStringTable;
+import com.tencent.mtt.hippy.utils.PixelUtil;
 import com.tencent.mtt.hippy.utils.UIThreadUtils;
 import com.tencent.mtt.hippy.views.image.HippyImageViewController;
 import com.tencent.mtt.hippy.views.text.HippyTextViewController;
+import com.tencent.renderer.component.image.ImageDecoderAdapter;
+import com.tencent.renderer.component.image.ImageLoader;
+import com.tencent.renderer.component.image.ImageLoaderAdapter;
+import com.tencent.renderer.component.text.FontAdapter;
 import com.tencent.renderer.component.text.TextRenderSupplier;
 import com.tencent.renderer.node.ListItemRenderNode;
 import com.tencent.renderer.node.RenderNode;
@@ -61,6 +60,7 @@ import com.tencent.renderer.serialization.Serializer;
 import com.tencent.renderer.utils.DisplayUtils;
 import com.tencent.renderer.utils.EventUtils.EventType;
 
+import com.tencent.vfs.VfsManager;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -80,10 +80,12 @@ import com.tencent.mtt.hippy.HippyRootView;
 import com.tencent.mtt.hippy.uimanager.RenderManager;
 import com.tencent.renderer.utils.FlexUtils;
 import com.tencent.renderer.utils.FlexUtils.FlexMeasureMode;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class NativeRenderer extends Renderer implements NativeRender, NativeRenderProxy,
         NativeRenderDelegate {
 
+    /** This specific ID is used to identify the root view of snapshot restore */
     public static final int SCREEN_SNAPSHOT_ROOT_ID = 1000;
     private static final String TAG = "NativeRenderer";
     private static final String NODE_ID = "id";
@@ -98,7 +100,10 @@ public class NativeRenderer extends Renderer implements NativeRender, NativeRend
     private static final String EVENT_PREFIX = "on";
     private static final String SNAPSHOT_CREATE_NODE = "createNode";
     private static final String SNAPSHOT_UPDATE_LAYOUT = "updateLayout";
+    /** The max capacity of UI task queue */
     private static final int MAX_UI_TASK_QUEUE_CAPACITY = 1000;
+    private static final int ROOT_VIEW_ID_INCREMENT = 10;
+    private static final AtomicInteger sRootIdCounter = new AtomicInteger(0);
     @Nullable
     private FrameworkProxy mFrameworkProxy;
     @Nullable
@@ -113,10 +118,11 @@ public class NativeRenderer extends Renderer implements NativeRender, NativeRend
     private final VirtualNodeManager mVirtualNodeManager;
     @Nullable
     private ExecutorService mBackgroundExecutor;
+    @Nullable
+    private ImageLoaderAdapter mImageLoader;
 
     public NativeRenderer() {
         mRenderProvider = new NativeRenderProvider(this);
-        NativeRendererManager.addNativeRendererInstance(mRenderProvider.getInstanceId(), this);
         // Should restrictions the capacity of ui task queue, to avoid js make huge amount of
         // node operation cause OOM.
         mUITaskQueue = new LinkedBlockingQueue<>(MAX_UI_TASK_QUEUE_CAPACITY);
@@ -124,11 +130,23 @@ public class NativeRenderer extends Renderer implements NativeRender, NativeRend
         mVirtualNodeManager = new VirtualNodeManager(this);
     }
 
+    public float getDensity() {
+        return PixelUtil.getDensity();
+    }
+
+    public NativeRenderProvider getRenderProvider() {
+        return mRenderProvider;
+    }
+
+    public void setId(int instanceId) {
+        mRenderProvider.setInstanceId(instanceId);
+    }
+
     @Override
     public void init(@Nullable List<Class<?>> controllers, @Nullable ViewGroup rootView) {
         mRenderManager.init(controllers);
         if (rootView instanceof HippyRootView) {
-            mRenderManager.createRootNode(rootView.getId());
+            mRenderManager.createRootNode(rootView.getId(), getInstanceId());
             mRenderManager.addRootView(rootView);
             Context context = rootView.getContext();
             if (context instanceof NativeRenderContext) {
@@ -145,47 +163,49 @@ public class NativeRenderer extends Renderer implements NativeRender, NativeRend
     }
 
     @Override
+    @Nullable
     public Object getCustomViewCreator() {
-        if (checkJSFrameworkProxy()) {
-            return ((JSFrameworkProxy) mFrameworkProxy).getCustomViewCreator();
-        }
-        return null;
-    }
-
-    @Override
-    public String getBundlePath() {
-        if (checkJSFrameworkProxy()) {
-            return ((JSFrameworkProxy) mFrameworkProxy).getBundlePath();
-        }
-        return null;
+        return (mFrameworkProxy != null) ? mFrameworkProxy.getCustomViewCreator() : null;
     }
 
     @Override
     @Nullable
-    public ImageLoaderAdapter getImageLoaderAdapter() {
-        if (mFrameworkProxy != null) {
-            return mFrameworkProxy.getImageLoaderAdapter();
+    public String getBundlePath() {
+        return (mFrameworkProxy != null) ? mFrameworkProxy.getBundlePath() : null;
+    }
+
+    @Override
+    @Nullable
+    public ImageLoaderAdapter getImageLoader() {
+        if (mImageLoader == null && getVfsManager() != null) {
+            mImageLoader = new ImageLoader(getVfsManager(), getImageDecoderAdapter());
         }
-        return null;
+        return mImageLoader;
+    }
+
+    @Override
+    @Nullable
+    public VfsManager getVfsManager() {
+        return (mFrameworkProxy != null) ? mFrameworkProxy.getVfsManager() : null;
+    }
+
+    @Override
+    @Nullable
+    public ImageDecoderAdapter getImageDecoderAdapter() {
+        return (mFrameworkProxy != null) ? mFrameworkProxy.getImageDecoderAdapter() : null;
     }
 
     @Override
     @Nullable
     public FontAdapter getFontAdapter() {
-        if (mFrameworkProxy != null) {
-            return mFrameworkProxy.getFontAdapter();
-        }
-        return null;
+        return (mFrameworkProxy != null) ? mFrameworkProxy.getFontAdapter() : null;
     }
 
     @Override
     @Nullable
     public Executor getBackgroundExecutor() {
-        if (mFrameworkProxy != null) {
-            Executor executor = mFrameworkProxy.getBackgroundExecutor();
-            if (executor != null) {
-                return executor;
-            }
+        if (mFrameworkProxy != null && mFrameworkProxy.getBackgroundExecutor() != null) {
+            return mFrameworkProxy.getBackgroundExecutor();
         }
         if (mBackgroundExecutor == null) {
             mBackgroundExecutor = Executors.newSingleThreadExecutor();
@@ -234,19 +254,20 @@ public class NativeRenderer extends Renderer implements NativeRender, NativeRend
         if (mInstanceLifecycleEventListeners != null) {
             mInstanceLifecycleEventListeners.clear();
         }
+        if (mImageLoader != null) {
+            mImageLoader.destroy();
+        }
         mFrameworkProxy = null;
         NativeRendererManager.removeNativeRendererInstance(mRenderProvider.getInstanceId());
     }
 
     @Override
     @NonNull
-    public View createRootView(@NonNull Context context, int rootId) {
-        View rootView = mRenderManager.getRootView(rootId);
-        if (rootView == null) {
-            rootView = new HippyRootView(context, mRenderProvider.getInstanceId(), rootId);
-            mRenderManager.createRootNode(rootId);
-            mRenderManager.addRootView(rootView);
-        }
+    public View createRootView(@NonNull Context context) {
+        int rootId = sRootIdCounter.addAndGet(ROOT_VIEW_ID_INCREMENT);
+        HippyRootView rootView = new HippyRootView(context, mRenderProvider.getInstanceId(), rootId);
+        mRenderManager.createRootNode(rootId, getInstanceId());
+        mRenderManager.addRootView(rootView);
         return rootView;
     }
 
@@ -310,9 +331,8 @@ public class NativeRenderer extends Renderer implements NativeRender, NativeRend
     @Override
     public void updateDimension(int width, int height, boolean shouldUseScreenDisplay,
             boolean systemUiVisibilityChanged) {
-        if (checkJSFrameworkProxy()) {
-            ((JSFrameworkProxy) mFrameworkProxy).updateDimension(width, height,
-                    shouldUseScreenDisplay, systemUiVisibilityChanged);
+        if (mFrameworkProxy != null) {
+            mFrameworkProxy.updateDimension(width, height, shouldUseScreenDisplay, systemUiVisibilityChanged);
         }
     }
 
@@ -362,7 +382,7 @@ public class NativeRenderer extends Renderer implements NativeRender, NativeRend
 
     @MainThread
     @Override
-    public void onRootDestroy(int rootId) {
+    public void destroyRoot(int rootId) {
         if (mInstanceLifecycleEventListeners != null) {
             for (HippyInstanceLifecycleEventListener listener : mInstanceLifecycleEventListeners) {
                 listener.onInstanceDestroy(rootId);
@@ -817,13 +837,9 @@ public class NativeRenderer extends Renderer implements NativeRender, NativeRend
         });
     }
 
-    private boolean checkJSFrameworkProxy() {
-        return mFrameworkProxy instanceof JSFrameworkProxy;
-    }
-
     /**
      * Decode snapshot buffer, can be called without waiting for the engine initialization to
-     * complete,
+     * complete
      *
      * <p>
      * As the decoding time will increase with large number of nodes, it is recommended to call this
@@ -851,6 +867,13 @@ public class NativeRenderer extends Renderer implements NativeRender, NativeRend
         }
     }
 
+    /**
+     * Replay snapshot with map of render node tree.
+     *
+     * @param context android system {@link Context} that use to create root view
+     * @param snapshotMap the render node tree represented by hash map
+     * @return the root view replay by snapshot, will return null if the replay failed
+     */
     @SuppressWarnings("unchecked")
     @Override
     @Nullable
@@ -865,7 +888,7 @@ public class NativeRenderer extends Renderer implements NativeRender, NativeRend
                     snapshotMap.get(SNAPSHOT_UPDATE_LAYOUT));
             rootView = new HippyRootView(context, mRenderProvider.getInstanceId(),
                     SCREEN_SNAPSHOT_ROOT_ID);
-            mRenderManager.createRootNode(SCREEN_SNAPSHOT_ROOT_ID);
+            mRenderManager.createRootNode(SCREEN_SNAPSHOT_ROOT_ID, getInstanceId());
             mRenderManager.addRootView(rootView);
             createNode(SCREEN_SNAPSHOT_ROOT_ID, nodeList);
             updateLayout(SCREEN_SNAPSHOT_ROOT_ID, layoutList);
@@ -877,6 +900,13 @@ public class NativeRenderer extends Renderer implements NativeRender, NativeRend
         return rootView;
     }
 
+    /**
+     * Replay snapshot with byte buffer of render node tree.
+     *
+     * @param context android system {@link Context} that use to create root view
+     * @param buffer the render node tree represented by byte buffer
+     * @return the root view replay by snapshot, will return null if the replay failed
+     */
     @Override
     @Nullable
     public View replaySnapshot(@NonNull Context context, @NonNull byte[] buffer) {
@@ -887,6 +917,18 @@ public class NativeRenderer extends Renderer implements NativeRender, NativeRend
         return null;
     }
 
+    /**
+     * Record snapshot to byte buffer.
+     *
+     * <p>
+     * Hippy SDK does not store the buffer generated by recording, because the policy of buffer
+     * invalidation needs to be defined by the business itself, the implementation of storage
+     * needs to be completed by the host itself
+     * <p/>
+     *
+     * @param rootId the root view id
+     * @param callback return the result of record by {@link Callback}
+     */
     @Override
     public void recordSnapshot(int rootId, @NonNull final Callback<byte[]> callback) {
         RenderNode rootNode = NativeRendererManager.getRootNode(rootId);
@@ -996,5 +1038,10 @@ public class NativeRenderer extends Renderer implements NativeRender, NativeRend
             ((TextRenderNode) child).recordVirtualChildren(nodeInfoList);
         }
         return true;
+    }
+
+    private interface UITaskExecutor {
+
+        void exec();
     }
 }

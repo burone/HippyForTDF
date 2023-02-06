@@ -21,8 +21,8 @@
 #include "module/domain/tdf_inspector_domain.h"
 #include <utility>
 #include "api/devtools_backend_service.h"
-#include "footstone/macros.h"
 #include "footstone/logging.h"
+#include "footstone/macros.h"
 #include "module/domain_register.h"
 
 namespace hippy::devtools {
@@ -33,10 +33,10 @@ constexpr char kRenderTreeUpdated[] = "TDFInspector.renderTreeUpdated";
 TdfInspectorDomain::TdfInspectorDomain(std::weak_ptr<DomainDispatch> dispatch) : BaseDomain(std::move(dispatch)) {
   tdf_inspector_model_ = std::make_shared<TDFInspectorModel>();
   frame_poll_model_ = std::make_shared<FramePollModel>(GetWorkerManager());
-  screen_shot_model_ = std::make_shared<ScreenShotModel>();
   frame_poll_model_->InitTask();
-  screen_shot_model_->SetDataProvider(GetDataProvider());
   frame_poll_model_->SetDataProvider(GetDataProvider());
+  screen_shot_model_ = std::make_shared<ScreenShotModel>();
+  screen_shot_model_->SetDataProvider(GetDataProvider());
   HandleScreenShotUpdatedNotification();
   HandleFramePollModelRefreshNotification();
 }
@@ -53,18 +53,16 @@ void TdfInspectorDomain::RegisterMethods() {
   REGISTER_DOMAIN(TdfInspectorDomain, DisableUpdateNotification, BaseRequest);
 }
 
-void TdfInspectorDomain::RegisterCallback() {}
-
 void TdfInspectorDomain::GetDomTree(const BaseRequest& request) {
   auto dom_tree_adapter = GetDataProvider()->dom_tree_adapter;
   if (!dom_tree_adapter) {
     ResponseErrorToFrontend(request.GetId(), kErrorNotSupport, "get dom tree failed, dom_tree_adapter null.");
     return;
   }
-  FOOTSTONE_DLOG(INFO) << "TdfInspectorDomain::GetDomTree start";
+  FOOTSTONE_DLOG(INFO) << kDevToolsTag << "TdfInspectorDomain::GetDomTree start";
   dom_tree_adapter->GetDomTree([WEAK_THIS, request](bool is_success, const DomNodeMetas& metas) {
     DEFINE_AND_CHECK_SELF(TdfInspectorDomain)
-    FOOTSTONE_DLOG(INFO) << "TdfInspectorDomain::GetDomTree end";
+    FOOTSTONE_DLOG(INFO) << kDevToolsTag << "TdfInspectorDomain::GetDomTree end";
     if (is_success) {
       nlohmann::json result_json = nlohmann::json::object();
       result_json[kFrontendKeyItree] = nlohmann::json::parse(metas.Serialize(), nullptr, false);
@@ -81,10 +79,10 @@ void TdfInspectorDomain::GetRenderTree(const BaseRequest& request) {
     ResponseErrorToFrontend(request.GetId(), kErrorNotSupport, "get render tree failed, render_tree_adapter is null.");
     return;
   }
-  FOOTSTONE_DLOG(INFO) << "GetRenderTree dumpDom start";
+  FOOTSTONE_DLOG(INFO) << kDevToolsTag << "GetRenderTree dumpDom start";
   render_tree_adapter->GetRenderTree([WEAK_THIS, request](bool is_success, const RenderNodeMetas& metas) {
     DEFINE_AND_CHECK_SELF(TdfInspectorDomain)
-    FOOTSTONE_DLOG(INFO) << "GetRenderTree dumpDom end %d" << (is_success ? 1 : 0);
+    FOOTSTONE_DLOG(INFO) << kDevToolsTag << "GetRenderTree dumpDom end %d" << (is_success ? 1 : 0);
     if (is_success) {
       nlohmann::json result_json = nlohmann::json::object();
       result_json[kFrontendKeyRtree] = nlohmann::json::parse(metas.Serialize(), nullptr, false);
@@ -96,7 +94,7 @@ void TdfInspectorDomain::GetRenderTree(const BaseRequest& request) {
 }
 
 void TdfInspectorDomain::GetScreenshot(const ScreenShotRequest& request) {
-  FOOTSTONE_DLOG(INFO) << "TdfInspectorDomain::GetScreenshot start";
+  FOOTSTONE_DLOG(INFO) << kDevToolsTag << "TdfInspectorDomain::GetScreenshot start";
   // use the latest GetScreenShot request params as the screenshot params
   screen_shot_model_->SetScreenShotRequest(request);
   screen_shot_model_->SetResponseScreenShotCallback([WEAK_THIS, request](const ScreenShotResponse& response) {
@@ -113,11 +111,11 @@ void TdfInspectorDomain::GetSelectedRenderObject(const SelectedRenderObjectReque
                             "get selected render object failed, render_tree_adapter.");
     return;
   }
-  FOOTSTONE_DLOG(INFO) << "GetSelectedRenderObject start";
+  FOOTSTONE_DLOG(INFO) << kDevToolsTag << "GetSelectedRenderObject start";
   render_tree_adapter->GetSelectedRenderObject(
       request.GetRenderId(), [WEAK_THIS, request](bool is_success, const RenderDiagnosticMetas& metas) {
         DEFINE_AND_CHECK_SELF(TdfInspectorDomain)
-        FOOTSTONE_DLOG(INFO) << "GetSelectedRenderObject response";
+        FOOTSTONE_DLOG(INFO) << kDevToolsTag << "GetSelectedRenderObject response";
         if (is_success) {
           nlohmann::json result_json = nlohmann::json::object();
           result_json[kFrontendKeyRtree] = nlohmann::json::parse(metas.Serialize(), nullptr, false);

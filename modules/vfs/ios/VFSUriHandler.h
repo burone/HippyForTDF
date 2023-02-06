@@ -20,14 +20,30 @@
  *
  */
 
+#pragma once
+
+#include "VFSDefines.h"
 #include "vfs/handler/uri_handler.h"
+
+class VFSUriLoader;
 
 class VFSUriHandler : public hippy::vfs::UriHandler {
   public:
     virtual void RequestUntrustedContent(
-        std::shared_ptr<hippy::vfs::UriHandler::SyncContext> ctx,
-        std::function<std::shared_ptr<hippy::vfs::UriHandler>()> next);
+        std::shared_ptr<hippy::RequestJob> request,
+        std::shared_ptr<hippy::JobResponse> response,
+        std::function<std::shared_ptr<UriHandler>()> next) override;
     virtual void RequestUntrustedContent(
-        std::shared_ptr<hippy::vfs::UriHandler::ASyncContext> ctx,
-        std::function<std::shared_ptr<hippy::vfs::UriHandler>()> next);
+        std::shared_ptr<hippy::RequestJob> request,
+        std::function<void(std::shared_ptr<hippy::JobResponse>)> cb,
+        std::function<std::shared_ptr<UriHandler>()> next) override;
+
+    virtual void RequestUntrustedContent(NSURLRequest *request, VFSHandlerProgressBlock progress,
+                                         VFSHandlerCompletionBlock completion,
+                                         VFSGetNextHandlerBlock next);
+    inline void SetLoader(const std::shared_ptr<VFSUriLoader> &loader){weakLoader_ = loader;}
+    inline std::weak_ptr<VFSUriLoader> GetLoader() const {return weakLoader_;}
+        
+  private:
+    std::weak_ptr<VFSUriLoader> weakLoader_;
 };

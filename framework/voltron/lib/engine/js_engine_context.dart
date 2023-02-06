@@ -18,15 +18,21 @@
 // limitations under the License.
 //
 
+import 'dart:collection';
+
+import 'package:voltron/adapter/resource_loader.dart';
+import 'package:voltron/devtools/devtools_manager.dart';
 import 'package:voltron_renderer/voltron_renderer.dart';
+import 'package:voltron_vfs/voltron_vfs.dart';
 
 import '../adapter.dart';
 import '../bridge.dart';
 import '../engine.dart';
 import '../inspector.dart';
 import '../module.dart';
+import 'js_dimension_checker.dart';
 
-class EngineContext implements Destroyable {
+class EngineContext with RenderContextProxy {
   final List<EngineLifecycleEventListener> _engineLifecycleEventListeners = [];
 
   // All CompoundView Instance Status Listener
@@ -34,6 +40,8 @@ class EngineContext implements Destroyable {
 
   // Module Manager
   late ModuleManager _moduleManager;
+
+  late final JSDimensionChecker _dimensionChecker;
 
   // Bridge Manager
   late VoltronBridgeManager _bridgeManager;
@@ -44,6 +52,11 @@ class EngineContext implements Destroyable {
   // Dev support manager
   late DevSupportManager _devSupportManager;
 
+  DevtoolsManager? _devtoolsManager;
+
+  // vfs manager
+  late VfsManager _vfsManager;
+
   final TimeMonitor _startTimeMonitor;
 
   late JSRenderContext _renderContext;
@@ -52,6 +65,7 @@ class EngineContext implements Destroyable {
   final int _id;
 
   final bool _isDevMode;
+
   final String _debugServerHost;
 
   GlobalConfigs get globalConfigs => _globalConfigs;
@@ -64,11 +78,15 @@ class EngineContext implements Destroyable {
 
   RenderManager get renderManager => _renderContext.renderManager;
 
+  DevtoolsManager? get devtoolsManager => _devtoolsManager;
+
   TimeMonitor get startTimeMonitor => _startTimeMonitor;
 
   EngineMonitor get engineMonitor => _renderContext.engineMonitor;
 
   JSRenderContext get renderContext => _renderContext;
+
+  VfsManager get vfsManager => _vfsManager;
 
   EngineContext(
     List<APIProvider>? apiProviders,
@@ -83,6 +101,10 @@ class EngineContext implements Destroyable {
     TimeMonitor monitor,
     EngineMonitor engineMonitor,
     DevSupportManager devSupportManager,
+    int workerManagerId,
+    VoltronRenderBridgeManager? voltronRenderBridgeManager,
+    DomHolder? domHolder,
+    HashMap<int, RootWidgetViewModel>? rootViewModelMap,
   )   : _globalConfigs = globalConfigs,
         _id = id,
         _isDevMode = isDevModule,
@@ -93,8 +115,17 @@ class EngineContext implements Destroyable {
       _id,
       processControllers(apiProviders),
       engineMonitor,
+      isDevModule,
+      workerManagerId,
+      voltronRenderBridgeManager,
+      domHolder,
+      rootViewModelMap,
     );
+    if (_isDevMode) {
+      _devtoolsManager = DevtoolsManager(true);
+    }
     _moduleManager = ModuleManager(this, apiProviders);
+    _dimensionChecker = JSDimensionChecker(globalConfigs.deviceAdapter, _moduleManager);
     _bridgeManager = VoltronBridgeManager(
       this,
       coreLoader,
@@ -105,6 +136,7 @@ class EngineContext implements Destroyable {
       isDevModule: _isDevMode,
       debugServerHost: _debugServerHost,
     );
+    _initVfsManager();
     _devSupportManager = devSupportManager;
   }
 
@@ -121,6 +153,12 @@ class EngineContext implements Destroyable {
       }
     }
     return controllerGenerators;
+  }
+
+  void _initVfsManager() {
+    _vfsManager = VfsManager(_renderContext.workerManagerId);
+    DefaultProcessor processor = DefaultProcessor(VoltronResourceLoader(_globalConfigs.httpAdapter));
+    _vfsManager.addProcessor(processor);
   }
 
   RootWidgetViewModel? getInstance(int id) {
@@ -161,23 +199,47 @@ class EngineContext implements Destroyable {
 
   void onRuntimeInitialized(int runtimeId) {
     _bridgeManager.bindDomAndRender(
-      domInstanceId: renderContext.domId,
+      domInstanceId: renderContext.domHolder.id,
       engineId: _id,
-      renderManagerId: renderContext.renderId,
+      renderManagerId: renderContext.renderManager.nativeRenderManagerId,
+    );
+  }
+
+  @override
+  double get fontScale => globalConfigs.fontScaleAdapter?.getFontScale() ?? 1.0;
+
+  @override
+  DimensionChecker get dimensionChecker => _dimensionChecker;
+
+  @override
+  void handleNativeException(Error error, bool haveCaught) {
+    globalConfigs.exceptionHandlerAdapter?.handleNativeException(
+      error,
+      haveCaught,
     );
   }
 
   int get engineId => _id;
 
-  void destroyBridge(DestoryBridgeCallback<bool> callback, bool isReload) {
+  void destroyBridge(
+    DestoryBridgeCallback<bool> callback,
+    bool isReload,
+  ) {
     _bridgeManager.destroyBridge(callback, isReload);
   }
 
-  @override
-  void destroy() {
+  void destroy(bool isReload) {
+    if (isReload) {
+      _renderContext.rootViewModelMap.forEach((rootId, viewModel) {
+        _renderContext.destroyRootView(rootId, isReload);
+        viewModel.restart();
+      });
+    }
+    _devtoolsManager?.destroy(isReload: isReload);
     _bridgeManager.destroy();
     _moduleManager.destroy();
-    _renderContext.destroy();
+    _vfsManager.destroy();
+    _renderContext.destroy(isReload);
     _instanceLifecycleEventListeners.clear();
     _engineLifecycleEventListeners.clear();
   }

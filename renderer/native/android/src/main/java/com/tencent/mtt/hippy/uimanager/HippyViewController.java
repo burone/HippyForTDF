@@ -23,7 +23,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import com.tencent.link_supplier.proxy.renderer.Renderer;
 import com.tencent.mtt.hippy.annotation.HippyControllerProps;
 import com.tencent.mtt.hippy.common.HippyArray;
 import com.tencent.mtt.hippy.common.HippyMap;
@@ -34,6 +33,7 @@ import com.tencent.mtt.hippy.utils.DimensionsUtil;
 import com.tencent.mtt.hippy.utils.LogUtils;
 import com.tencent.mtt.hippy.utils.PixelUtil;
 import com.tencent.mtt.hippy.views.common.ClipChildrenView;
+import com.tencent.renderer.Renderer;
 import com.tencent.renderer.node.VirtualNode;
 import com.tencent.renderer.node.RenderNode;
 import java.util.ArrayList;
@@ -369,21 +369,13 @@ public abstract class HippyViewController<T extends View & HippyViewBase> implem
     public void dispatchFunction(@NonNull T view, @NonNull String functionName,
             @NonNull List params, @NonNull Promise promise) {
         switch (functionName) {
-            case DevtoolsUtil.GET_SCREEN_SHOT:
-                DevtoolsUtil.getScreenShot(view, promise);
-                break;
-            case DevtoolsUtil.ADD_FRAME_CALLBACK:
-                DevtoolsUtil.addFrameCallback(params, view, promise);
-                break;
-            case DevtoolsUtil.REMOVE_FRAME_CALLBACK:
-                DevtoolsUtil.removeFrameCallback(params, view, promise);
-                break;
             case MEASURE_IN_WINDOW:
                 measureInWindow(view, promise);
                 break;
             default:
                 break;
         }
+        DevtoolsUtil.dispatchDevtoolsFunction(view, functionName, params, promise);
     }
 
     public void onBatchComplete(@NonNull T view) {

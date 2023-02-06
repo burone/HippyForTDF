@@ -21,26 +21,39 @@
  */
 
 #import "HippyBridge+VFSLoader.h"
+#import "HPToolUtils.h"
+
+#include "VFSUriLoader.h"
+#include "VFSUriHandler.h"
 
 @implementation HippyBridge (VFSLoader)
 
-- (void)loadContentsAsynchronouslyFromUrl:(NSURL *)url
-                                   params:(NSDictionary *)params
+- (void)loadContentsAsynchronouslyFromUrl:(NSString *)urlString
+                                   method:(NSString *_Nullable)method
+                                   params:(NSDictionary<NSString *, NSString *> *)httpHeaders
+                                     body:(NSData *)body
+                                 progress:(void(^)(NSUInteger current, NSUInteger total))progress
                         completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler {
-    if (!url || !completionHandler) {
+    if (!urlString || !completionHandler) {
         return;
     }
-    VFSUriLoader::URILoaderCompletion completion = [completionHandler](NSData * retData, NSURLResponse *retResponse, NSError *retError) {
-        completionHandler(retData, retResponse, retError);
-    };
-    self.uriLoader->loadContentsAsynchronously(url, params, completion);
-}
-
-- (NSData *)loadContentsSynchronouslyFromUrl:(NSURL *)url
-                                      params:(NSDictionary *)params
-                           returningResponse:(NSURLResponse * _Nullable * _Nullable)response
-                                       error:(NSError *_Nullable * _Nullable)error {
-    return self.uriLoader->loadContentsSynchronously(url, params, response, error);
+    std::shared_ptr<VFSUriLoader> loader = [self VFSUriLoader].lock();
+    if (loader) {
+        NSURL *url = HPURLWithString(urlString, nil);
+        NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+        if (method) {
+            [request setHTTPMethod:method];
+        }
+        if (httpHeaders) {
+            for (NSString *key in httpHeaders) {
+                [request setValue:httpHeaders[key] forHTTPHeaderField:key];
+            }
+        }
+        if (body) {
+            [request setHTTPBody:body];
+        }
+        loader->RequestUntrustedContent(request, progress, completionHandler);
+    }
 }
 
 @end

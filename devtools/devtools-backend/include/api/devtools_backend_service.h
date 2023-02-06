@@ -27,6 +27,7 @@
 #include "api/devtools_config.h"
 #include "api/devtools_data_channel.h"
 #include "api/devtools_data_provider.h"
+#include "api/devtools_define.h"
 #include "api/devtools_notification_center.h"
 #include "footstone/worker_manager.h"
 #include "tunnel/tunnel_service.h"
@@ -40,7 +41,8 @@ namespace hippy::devtools {
  */
 class DevtoolsBackendService : public std::enable_shared_from_this<DevtoolsBackendService> {
  public:
-  DevtoolsBackendService(const DevtoolsConfig& devtools_config, std::shared_ptr<footstone::WorkerManager> worker_manager);
+  DevtoolsBackendService(const DevtoolsConfig& devtools_config,
+                         std::shared_ptr<footstone::WorkerManager> worker_manager);
 
   ~DevtoolsBackendService();
 
@@ -66,8 +68,8 @@ class DevtoolsBackendService : public std::enable_shared_from_this<DevtoolsBacke
    * @return NotificationCenter
    */
   std::shared_ptr<NotificationCenter> GetNotificationCenter() { return data_channel_->GetNotificationCenter(); }
- private:
 
+ private:
   std::shared_ptr<DataChannel> data_channel_;
   std::shared_ptr<TunnelService> tunnel_service_;
   std::shared_ptr<DomainDispatch> domain_dispatch_;

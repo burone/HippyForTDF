@@ -22,8 +22,7 @@ import android.view.View;
 import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
-import com.tencent.link_supplier.proxy.framework.ImageLoaderAdapter;
-import com.tencent.link_supplier.proxy.renderer.ControllerProvider;
+import com.openhippy.connector.JsDriver.V8InitParams;
 import com.tencent.mtt.hippy.adapter.DefaultLogAdapter;
 import com.tencent.mtt.hippy.adapter.HippyLogAdapter;
 import com.tencent.mtt.hippy.adapter.device.DefaultDeviceAdapter;
@@ -56,7 +55,11 @@ import com.tencent.mtt.hippy.utils.LogUtils;
 import com.tencent.mtt.hippy.utils.UIThreadUtils;
 import com.tencent.mtt.hippy.adapter.thirdparty.HippyThirdPartyAdapter;
 
+import com.tencent.renderer.ControllerProvider;
+import com.tencent.renderer.component.image.ImageDecoderAdapter;
+import com.tencent.vfs.Processor;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -176,7 +179,7 @@ public abstract class HippyEngine {
 
   public abstract ViewGroup loadModule(ModuleLoadParams loadParams, ModuleListener listener);
 
-  public abstract void destroyModule(ViewGroup moduleView);
+  public abstract void destroyModule(@NonNull ViewGroup rootView, @NonNull Callback<Boolean> callback);
 
   public abstract void onEngineResume();
 
@@ -192,7 +195,7 @@ public abstract class HippyEngine {
 
   public abstract HippyEngineContext getEngineContext();
 
-  public abstract void recordSnapshot(int rootId, @NonNull final Callback<byte[]> callback);
+  public abstract void recordSnapshot(@NonNull View rootView, @NonNull final Callback<byte[]> callback);
 
   public abstract View replaySnapshot(@NonNull Context context, byte[] buffer);
 
@@ -212,20 +215,12 @@ public abstract class HippyEngine {
     DESTROYED
   }
 
-  public static class V8InitParams {
-    public long initialHeapSize;
-    public long maximumHeapSize;
-  }
-
   // Hippy 引擎初始化时的参数设置
   @SuppressWarnings("deprecation")
   public static class EngineInitParams {
 
     // 必须 宿主（Hippy的使用者）的Context
     public Context context;
-    // 必须 图片加载器：需要实现异步的图片加载接口fetchImage()，和同步的图片加载接口getImage()。
-    public ImageLoaderAdapter imageLoader;
-
     // 可选参数 核心的jsbundle的assets路径（assets路径和文件路径二选一，优先使用assets路径），debugMode = false时有效
     public String coreJSAssetsPath;
     // 可选参数 核心的jsbundle的文件路径（assets路径和文件路径二选一，优先使用assets路径）,debugMode = false时有效
@@ -245,6 +240,7 @@ public abstract class HippyEngine {
     // 可选参数 自定义的，用来提供Native modules、JavaScript modules、View controllers的管理器。1个或多个
     public List<HippyAPIProvider> moduleProviders;
     public List<ControllerProvider> controllerProviders;
+    public List<Processor> processors;
     //Optional  is use V8 serialization or json
     public boolean enableV8Serialization = true;
     // 可选参数 是否打印引擎的完整的log。默认为false
@@ -252,6 +248,7 @@ public abstract class HippyEngine {
     // 可选参数 code cache的名字，如果设置为空，则不启用code cache，默认为 ""
     public String codeCacheTag = "";
 
+    public ImageDecoderAdapter imageDecoderAdapter;
     //可选参数 接收RuntimeId
     public HippyThirdPartyAdapter thirdPartyAdapter;
 
@@ -286,10 +283,6 @@ public abstract class HippyEngine {
       if (context == null) {
         throw new IllegalArgumentException(
             EngineInitParams.class.getName() + " context must not be null!");
-      }
-      if (imageLoader == null) {
-        throw new IllegalArgumentException(
-            EngineInitParams.class.getName() + " imageLoader must not be null!");
       }
       if (sharedPreferencesAdapter == null) {
         sharedPreferencesAdapter = new DefaultSharedPreferencesAdapter(context);
@@ -353,7 +346,7 @@ public abstract class HippyEngine {
     // 可选参数 传递给前端的rootview：比如：Hippy.entryPage: class App extends Component
     public HippyMap jsParams;
     // 可选参数 目前只有一个用处：映射："CustomViewCreator" <==> 宿主自定义的一个HippyCustomViewCreator(这个creator还得通过ModuleParams.Builder.setCustomViewCreator来指定才行)
-    public Map nativeParams;
+    public HashMap<String, Object> nativeParams;
     // 可选参数 Bundle加载器，老式用法，不建议使用（若一定要使用，则会覆盖jsAssetsPath，jsFilePath的值）。参见jsAssetsPath，jsFilePath
     // 可选参数 code cache的名字，如果设置为空，则不启用code cache，默认为 ""
     public String codeCacheTag = "";

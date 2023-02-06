@@ -13,81 +13,96 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.tencent.mtt.hippy.modules.nativemodules.image;
 
-import com.tencent.link_supplier.proxy.framework.ImageDataSupplier;
-import com.tencent.link_supplier.proxy.framework.ImageLoaderAdapter;
-import com.tencent.link_supplier.proxy.framework.ImageRequestListener;
+import android.graphics.BitmapFactory;
+import android.text.TextUtils;
+import androidx.annotation.NonNull;
 import com.tencent.mtt.hippy.HippyEngineContext;
 import com.tencent.mtt.hippy.annotation.HippyMethod;
 import com.tencent.mtt.hippy.annotation.HippyNativeModule;
-import com.tencent.mtt.hippy.common.HippyMap;
 import com.tencent.mtt.hippy.modules.Promise;
 import com.tencent.mtt.hippy.modules.nativemodules.HippyNativeModuleBase;
-
+import com.tencent.mtt.hippy.runtime.builtins.JSObject;
+import com.tencent.vfs.ResourceDataHolder;
+import com.tencent.vfs.VfsManager;
+import com.tencent.vfs.VfsManager.FetchResourceCallback;
 import java.util.HashMap;
-import java.util.Map;
 
-@SuppressWarnings({"deprecation", "unused"})
 @HippyNativeModule(name = "ImageLoaderModule")
 public class ImageLoaderModule extends HippyNativeModuleBase {
 
-    final ImageLoaderAdapter mImageAdapter;
+    private final VfsManager mVfsManager;
 
     public ImageLoaderModule(HippyEngineContext context) {
         super(context);
-        mImageAdapter = context.getGlobalConfigs().getImageLoaderAdapter();
+        mVfsManager = context.getVfsManager();
+    }
+
+    private void decodeImageData(@NonNull final String url, @NonNull byte[] data, final Promise promise) {
+        try {
+            final BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inJustDecodeBounds = true;
+            BitmapFactory.decodeByteArray(data, 0, data.length, options);
+            JSObject jsObject = new JSObject();
+            jsObject.set("width", options.outWidth);
+            jsObject.set("height", options.outHeight);
+            promise.resolve(jsObject);
+        } catch (OutOfMemoryError | Exception e) {
+            promise.reject("Fetch image failed, url=" + url + ", msg=" + e.getMessage());
+        }
+    }
+
+    @NonNull
+    private HashMap<String, String> generateRequestParams() {
+        HashMap<String, String> requestParams = new HashMap<>();
+        requestParams.put("Content-Type", "image");
+        return requestParams;
     }
 
     @HippyMethod(name = "getSize")
     public void getSize(final String url, final Promise promise) {
-        mImageAdapter.fetchImage(url, new ImageRequestListener() {
-            @Override
-            public void onRequestStart(ImageDataSupplier supplier) {
-            }
+        if (TextUtils.isEmpty(url)) {
+            promise.reject("Url parameter is empty!");
+            return;
+        }
+        mVfsManager.fetchResourceAsync(url, null, generateRequestParams(),
+                new FetchResourceCallback() {
+                    @Override
+                    public void onFetchCompleted(@NonNull final ResourceDataHolder dataHolder) {
+                        byte[] bytes = dataHolder.getBytes();
+                        if (dataHolder.resultCode
+                                != ResourceDataHolder.RESOURCE_LOAD_SUCCESS_CODE || bytes == null
+                                || bytes.length <= 0) {
+                            String message =
+                                    dataHolder.errorMessage != null ? dataHolder.errorMessage : "";
+                            promise.reject("Fetch image failed, url=" + url + ", msg=" + message);
+                        } else {
+                            decodeImageData(url, bytes, promise);
+                        }
+                    }
 
-            @Override
-            public void onRequestProgress(float total, float loaded) {
-            }
-
-            @Override
-            public void onRequestSuccess(ImageDataSupplier supplier) {
-                if (supplier != null) {
-                    HippyMap resultMap = new HippyMap();
-                    resultMap.pushInt("width", supplier.getImageWidth());
-                    resultMap.pushInt("height", supplier.getImageWidth());
-                    promise.resolve(resultMap);
-                } else {
-                    promise.reject("Fetch image failed, source=" + url);
-                }
-            }
-
-            @Override
-            public void onRequestFail(Throwable throwable) {
-                String message = throwable != null ? throwable.getMessage() : "";
-                promise.reject("Fetch image failed, url=" + url + ", msg=" + message);
-            }
-        }, null);
+                    @Override
+                    public void onFetchProgress(long total, long loaded) {
+                        // Nothing need to do here.
+                    }
+                });
     }
 
     @HippyMethod(name = "prefetch")
     public void prefetch(String url) {
-        mImageAdapter.fetchImage(url, new ImageRequestListener() {
-            @Override
-            public void onRequestStart(ImageDataSupplier supplier) {
-            }
+        mVfsManager.fetchResourceAsync(url, null, generateRequestParams(),
+                new FetchResourceCallback() {
+                    @Override
+                    public void onFetchCompleted(@NonNull final ResourceDataHolder dataHolder) {
+                        // Nothing need to do here.
+                    }
 
-            @Override
-            public void onRequestProgress(float total, float loaded) {
-            }
-
-            @Override
-            public void onRequestSuccess(ImageDataSupplier supplier) {
-            }
-
-            @Override
-            public void onRequestFail(Throwable throwable) {
-            }
-        }, null);
+                    @Override
+                    public void onFetchProgress(long total, long loaded) {
+                        // Nothing need to do here.
+                    }
+                });
     }
 }

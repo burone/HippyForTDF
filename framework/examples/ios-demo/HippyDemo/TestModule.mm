@@ -31,6 +31,11 @@
 #import "NativeRenderManager.h"
 #import "NativeRenderRootView.h"
 #import "UIView+NativeRender.h"
+#import "NativeRenderImpl.h"
+#import "HippyJSExecutor.h"
+#import "HPOCToHippyValue.h"
+
+#include "driver/scope.h"
 
 static NSString *const engineKey = @"Demo";
 
@@ -68,7 +73,6 @@ HIPPY_EXPORT_METHOD(remoteDebug:(nonnull NSNumber *)instanceId bundleUrl:(nonnul
     }
     NSURL *url = [NSURL URLWithString:bundleUrl];
     NativeRenderRootView *rootView = [[NativeRenderRootView alloc] initWithFrame:rootViewController.view.bounds];
-    NSNumber *rootTag = rootView.componentTag;
     NSDictionary *launchOptions = @{@"EnableTurbo": @(DEMO_ENABLE_TURBO), @"DebugMode": @(YES), @"DebugURL": url};
     NSArray<NSURL *> *bundleURLs = @[url];
     NSURL *sandboxDirectory = [url URLByDeletingLastPathComponent];
@@ -77,6 +81,7 @@ HIPPY_EXPORT_METHOD(remoteDebug:(nonnull NSNumber *)instanceId bundleUrl:(nonnul
                                                   launchOptions:launchOptions
                                                     engineKey:@"Demo"];
     [self setupBridge:bridge rootView:rootView bundleURLs:bundleURLs props:@{@"isSimulator": @(isSimulator)}];
+    RegisterVFSLoaderForBridge(bridge, _nativeRenderManager);
     bridge.sandboxDirectory = sandboxDirectory;
     bridge.contextName = @"Demo";
     bridge.moduleName = @"Demo";
@@ -105,8 +110,6 @@ HIPPY_EXPORT_METHOD(remoteDebug:(nonnull NSNumber *)instanceId bundleUrl:(nonnul
     
     //Create NativeRenderManager
     _nativeRenderManager = std::make_shared<NativeRenderManager>();
-    //Set frameproxy for render manager
-    _nativeRenderManager->SetFrameworkProxy(bridge);
     //set dom manager
     _nativeRenderManager->SetDomManager(domManager);
     
@@ -114,10 +117,9 @@ HIPPY_EXPORT_METHOD(remoteDebug:(nonnull NSNumber *)instanceId bundleUrl:(nonnul
     domManager->SetRenderManager(_nativeRenderManager);
     //bind rootview and root node
     _nativeRenderManager->RegisterRootView(rootView, rootNode);
-    id<HPRenderContext> renderContext = _nativeRenderManager->GetRenderContext();
     
     //setup necessary params for bridge
-    [bridge setupDomManager:domManager rootNode:rootNode renderContext:renderContext];
+    [bridge setupDomManager:domManager rootNode:rootNode];
     [bridge loadBundleURLs:bundleURLs];
     [bridge loadInstanceForRootView:rootTag withProperties:props];
     
@@ -131,7 +133,7 @@ HIPPY_EXPORT_METHOD(remoteDebug:(nonnull NSNumber *)instanceId bundleUrl:(nonnul
         [[[vc.view subviews] firstObject] removeFromSuperview];
     }
     //2.unregister root node from render context by id.
-    [_bridge.renderContext unregisterRootViewFromTag:@(_rootNode->GetId())];
+    _nativeRenderManager->UnregisterRootView(_rootNode->GetId());
     //3.set elements holding by user to nil
     _rootNode = nil;
 }
@@ -161,6 +163,22 @@ HIPPY_EXPORT_METHOD(remoteDebug:(nonnull NSNumber *)instanceId bundleUrl:(nonnul
 
 - (BOOL)shouldStartInspector:(HippyBridge *)bridge {
     return bridge.debugMode;
+}
+
+- (void)invalidateForReason:(HPInvalidateReason)reason bridge:(HippyBridge *)bridge {
+    [_nativeRenderManager->rootViews() enumerateObjectsUsingBlock:^(UIView * _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
+        if ([obj respondsToSelector:@selector(invalidate)]) {
+            [obj performSelector:@selector(invalidate)];
+        }
+        NSDictionary *param = @{@"id": [obj componentTag]};
+        footstone::value::HippyValue value = [param toHippyValue];
+        std::shared_ptr<footstone::value::HippyValue> domValue = std::make_shared<footstone::value::HippyValue>(value);
+        bridge.javaScriptExecutor.pScope->UnloadInstance(domValue);
+    }];
+}
+
+- (void)removeRootNode:(NSNumber *)rootTag bridge:(HippyBridge *)bridge{
+    _nativeRenderManager->UnregisterRootView([rootTag intValue]);
 }
 
 @end

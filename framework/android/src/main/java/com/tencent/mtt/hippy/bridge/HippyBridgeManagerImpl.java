@@ -24,15 +24,17 @@ import android.os.Handler;
 import android.os.Message;
 import android.text.TextUtils;
 
+import androidx.annotation.NonNull;
+import com.openhippy.connector.JsDriver;
+import com.openhippy.connector.JsDriver.V8InitParams;
+import com.openhippy.connector.NativeCallback;
 import com.tencent.mtt.hippy.HippyEngine;
 import com.tencent.mtt.hippy.HippyEngine.ModuleLoadStatus;
-import com.tencent.mtt.hippy.HippyEngine.V8InitParams;
 import com.tencent.mtt.hippy.HippyEngineContext;
 import com.tencent.mtt.hippy.adapter.thirdparty.HippyThirdPartyAdapter;
 import com.tencent.mtt.hippy.bridge.bundleloader.HippyBundleLoader;
 import com.tencent.mtt.hippy.bridge.jsi.TurboModuleManager;
 import com.tencent.mtt.hippy.common.Callback;
-import com.tencent.mtt.hippy.common.HippyArray;
 import com.tencent.mtt.hippy.common.HippyJsException;
 import com.tencent.mtt.hippy.common.HippyMap;
 import com.tencent.mtt.hippy.modules.HippyModuleManager;
@@ -69,7 +71,7 @@ public class HippyBridgeManagerImpl implements HippyBridgeManager, HippyBridge.B
     static final int FUNCTION_ACTION_PAUSE_INSTANCE = 3;
     static final int FUNCTION_ACTION_DESTROY_INSTANCE = 4;
     static final int FUNCTION_ACTION_CALLBACK = 5;
-    static final int FUNCTION_ACTION_CALL_JSMODULE = 6;
+    static final int FUNCTION_ACTION_CALL_JS_MODULE = 6;
     static final int FUNCTION_ACTION_ON_WEBSOCKET_MESSAGE = 7;
 
     public static final int BRIDGE_TYPE_SINGLE_THREAD = 2;
@@ -80,14 +82,11 @@ public class HippyBridgeManagerImpl implements HippyBridgeManager, HippyBridge.B
 
     final HippyEngineContext mContext;
     final HippyBundleLoader mCoreBundleLoader;
-    HippyBridge mHippyBridge;
-    volatile boolean mIsInit = false;
+    private final HippyBridge mHippyBridge;
+    volatile boolean mInitialized = false;
     Handler mHandler;
-    final int mBridgeType;
-    final boolean enableV8Serialization;
+    final boolean mEnableV8Serialization;
     ArrayList<String> mLoadedBundleInfo = null;
-    private final boolean mIsDevModule;
-    private final String mDebugServerHost;
     private final int mGroupId;
     private final HippyThirdPartyAdapter mThirdPartyAdapter;
     private StringBuilder mStringBuilder;
@@ -97,23 +96,19 @@ public class HippyBridgeManagerImpl implements HippyBridgeManager, HippyBridge.B
     private com.tencent.mtt.hippy.serialization.recommend.Serializer recommendSerializer;
     HippyEngine.ModuleListener mLoadModuleListener;
     private TurboModuleManager mTurboModuleManager;
-    private HippyEngine.V8InitParams v8InitParams;
     private NativeCallback mCallFunctionCallback;
 
     public HippyBridgeManagerImpl(HippyEngineContext context, HippyBundleLoader coreBundleLoader,
             int bridgeType, boolean enableV8Serialization, boolean isDevModule,
-            String debugServerHost,
-            int groupId, HippyThirdPartyAdapter thirdPartyAdapter, V8InitParams v8InitParams) {
+            String debugServerHost, int groupId, HippyThirdPartyAdapter thirdPartyAdapter,
+            V8InitParams v8InitParams, @NonNull JsDriver jsDriver) {
         mContext = context;
         mCoreBundleLoader = coreBundleLoader;
-        mBridgeType = bridgeType;
-        mIsDevModule = isDevModule;
-        mDebugServerHost = debugServerHost;
         mGroupId = groupId;
         mThirdPartyAdapter = thirdPartyAdapter;
-        this.enableV8Serialization = enableV8Serialization;
-        this.v8InitParams = v8InitParams;
-
+        mEnableV8Serialization = enableV8Serialization;
+        mHippyBridge = new HippyBridgeImpl(context, this, bridgeType == BRIDGE_TYPE_SINGLE_THREAD,
+                enableV8Serialization, isDevModule, debugServerHost, v8InitParams, jsDriver);
         if (enableV8Serialization) {
             compatibleSerializer = new Serializer();
             recommendSerializer = new com.tencent.mtt.hippy.serialization.recommend.Serializer();
@@ -140,7 +135,7 @@ public class HippyBridgeManagerImpl implements HippyBridgeManager, HippyBridge.B
                 recommendSerializer : compatibleSerializer;
         if (msg.arg1 == BridgeTransferType.BRIDGE_TRANSFER_TYPE_NIO.value()) {
             ByteBuffer buffer;
-            if (enableV8Serialization) {
+            if (mEnableV8Serialization) {
                 if (safeDirectWriter == null) {
                     safeDirectWriter = new SafeDirectWriter(SafeDirectWriter.INITIAL_CAPACITY, 0);
                 } else {
@@ -161,7 +156,7 @@ public class HippyBridgeManagerImpl implements HippyBridgeManager, HippyBridge.B
 
             mHippyBridge.callFunction(functionId, mCallFunctionCallback, buffer);
         } else {
-            if (enableV8Serialization) {
+            if (mEnableV8Serialization) {
                 if (safeHeapWriter == null) {
                     safeHeapWriter = new SafeHeapWriter();
                 } else {
@@ -174,7 +169,8 @@ public class HippyBridgeManagerImpl implements HippyBridgeManager, HippyBridge.B
                 ByteBuffer buffer = safeHeapWriter.chunked();
                 int offset = buffer.arrayOffset() + buffer.position();
                 int length = buffer.limit() - buffer.position();
-                mHippyBridge.callFunction(functionId, mCallFunctionCallback, buffer.array(), offset, length);
+                mHippyBridge.callFunction(functionId, mCallFunctionCallback, buffer.array(), offset,
+                        length);
             } else {
                 mStringBuilder.setLength(0);
                 byte[] bytes = ArgumentUtils.objectToJsonOpt(msg.obj, mStringBuilder).getBytes(
@@ -218,16 +214,12 @@ public class HippyBridgeManagerImpl implements HippyBridgeManager, HippyBridge.B
     }
 
     @Override
-    public boolean handleMessage(@SuppressWarnings("NullableProblems") Message msg) {
+    public boolean handleMessage(Message msg) {
         try {
             switch (msg.what) {
                 case MSG_CODE_INIT_BRIDGE: {
                     @SuppressWarnings("unchecked") final com.tencent.mtt.hippy.common.Callback<Boolean> callback = (com.tencent.mtt.hippy.common.Callback<Boolean>) msg.obj;
                     try {
-                        mHippyBridge = new HippyBridgeImpl(mContext, HippyBridgeManagerImpl.this,
-                                mBridgeType == BRIDGE_TYPE_SINGLE_THREAD, enableV8Serialization,
-                                this.mIsDevModule, this.mDebugServerHost, v8InitParams);
-
                         mHippyBridge.initJSBridge(getGlobalConfigs(), new NativeCallback(mHandler) {
                             @Override
                             public void Call(long result, Message message, String action,
@@ -242,7 +234,7 @@ public class HippyBridgeManagerImpl implements HippyBridgeManager, HippyBridge.B
 
                                 long runtimeId = mHippyBridge.getV8RuntimeId();
                                 if (mContext != null) {
-                                    mContext.onRuntimeInitialized(runtimeId);
+                                    mContext.onRuntimeInitialized();
                                 }
 
                                 if (enableTurbo()) {
@@ -260,24 +252,24 @@ public class HippyBridgeManagerImpl implements HippyBridgeManager, HippyBridge.B
                                                 @Override
                                                 public void Call(long result, Message message,
                                                         String action, String reason) {
-                                                    mIsInit = result == 0;
+                                                    mInitialized = result == 0;
                                                     RuntimeException exception = null;
-                                                    if (!mIsInit) {
+                                                    if (!mInitialized) {
                                                         exception = new RuntimeException(
                                                                 "load coreJsBundle failed, check your core jsBundle:"
                                                                         + reason);
                                                     }
-                                                    callback.callback(mIsInit, exception);
+                                                    callback.callback(mInitialized, exception);
                                                 }
                                             });
                                 } else {
-                                    mIsInit = true;
-                                    callback.callback(mIsInit, null);
+                                    mInitialized = true;
+                                    callback.callback(mInitialized, null);
                                 }
                             }
                         }, mGroupId);
                     } catch (Throwable e) {
-                        mIsInit = false;
+                        mInitialized = false;
                         callback.callback(false, e);
                     }
                     return true;
@@ -285,9 +277,9 @@ public class HippyBridgeManagerImpl implements HippyBridgeManager, HippyBridge.B
                 case MSG_CODE_RUN_BUNDLE: {
                     HippyBundleLoader loader = (HippyBundleLoader) msg.obj;
 
-                    if (!mIsInit) {
+                    if (!mInitialized) {
                         notifyModuleLoaded(ModuleLoadStatus.STATUS_ENGINE_UNINIT,
-                                "load module error. HippyBridge mIsInit:" + mIsInit);
+                                "load module error. HippyBridge mInitialized:" + mInitialized);
                         return true;
                     }
                     if (loader == null) {
@@ -331,7 +323,7 @@ public class HippyBridgeManagerImpl implements HippyBridgeManager, HippyBridge.B
                     return true;
                 }
                 case MSG_CODE_CALL_FUNCTION: {
-                    if (mIsInit) {
+                    if (mInitialized) {
                         handleCallFunction(msg);
                     }
 
@@ -362,7 +354,7 @@ public class HippyBridgeManagerImpl implements HippyBridgeManager, HippyBridge.B
 
     @Override
     public void runBundle(int id, HippyBundleLoader loader, HippyEngine.ModuleListener listener) {
-        if (!mIsInit) {
+        if (!mInitialized) {
             mLoadModuleListener = listener;
             notifyModuleLoaded(ModuleLoadStatus.STATUS_ENGINE_UNINIT,
                     "load module error. HippyBridge not initialized");
@@ -411,7 +403,7 @@ public class HippyBridgeManagerImpl implements HippyBridgeManager, HippyBridge.B
 
     @Override
     public void loadInstance(String name, int id, HippyMap params) {
-        if (!mIsInit) {
+        if (!mInitialized) {
             return;
         }
 
@@ -426,7 +418,7 @@ public class HippyBridgeManagerImpl implements HippyBridgeManager, HippyBridge.B
 
     @Override
     public void resumeInstance(int id) {
-        if (!mIsInit) {
+        if (!mInitialized) {
             return;
         }
 
@@ -437,7 +429,7 @@ public class HippyBridgeManagerImpl implements HippyBridgeManager, HippyBridge.B
 
     @Override
     public void pauseInstance(int id) {
-        if (!mIsInit) {
+        if (!mInitialized) {
             return;
         }
 
@@ -448,7 +440,7 @@ public class HippyBridgeManagerImpl implements HippyBridgeManager, HippyBridge.B
 
     @Override
     public void destroyInstance(int id) {
-        if (!mIsInit) {
+        if (!mInitialized) {
             return;
         }
         JSObject jsObject = new JSObject();
@@ -479,7 +471,7 @@ public class HippyBridgeManagerImpl implements HippyBridgeManager, HippyBridge.B
 
     @Override
     public void destroy() {
-        mIsInit = false;
+        mInitialized = false;
         mLoadModuleListener = null;
         if (mHandler != null) {
             mHandler.removeMessages(MSG_CODE_INIT_BRIDGE);
@@ -491,7 +483,7 @@ public class HippyBridgeManagerImpl implements HippyBridgeManager, HippyBridge.B
     @Override
     public void callJavaScriptModule(String moduleName, String methodName, Object param,
             BridgeTransferType transferType) {
-        if (!mIsInit) {
+        if (!mInitialized) {
             return;
         }
 
@@ -502,7 +494,7 @@ public class HippyBridgeManagerImpl implements HippyBridgeManager, HippyBridge.B
 
         Message message = mHandler
                 .obtainMessage(MSG_CODE_CALL_FUNCTION, transferType.value(),
-                        FUNCTION_ACTION_CALL_JSMODULE,
+                        FUNCTION_ACTION_CALL_JS_MODULE,
                         map);
         mHandler.sendMessage(message);
     }
@@ -510,14 +502,13 @@ public class HippyBridgeManagerImpl implements HippyBridgeManager, HippyBridge.B
     @Override
     public void callNatives(String moduleName, String moduleFunc, String callId,
             ByteBuffer params) {
-        if (mContext == null) {
-            return;
-        }
-        HippyModuleManager moduleManager = mContext.getModuleManager();
-        if (moduleManager != null) {
-            HippyCallNativeParams callNativeParams = HippyCallNativeParams
-                    .obtain(moduleName, moduleFunc, callId, params);
-            moduleManager.callNatives(callNativeParams);
+        if (mContext != null) {
+            HippyModuleManager moduleManager = mContext.getModuleManager();
+            if (moduleManager != null) {
+                HippyCallNativeParams callNativeParams = HippyCallNativeParams
+                        .obtain(moduleName, moduleFunc, callId, params);
+                moduleManager.callNatives(callNativeParams);
+            }
         }
     }
 

@@ -28,6 +28,7 @@
 #import "HippyDeviceBaseInfo.h"
 #import "HippyDisplayLink.h"
 #import "HippyEventDispatcher.h"
+#import "HippyFileHandler.h"
 #import "HippyInstanceLoadBlock.h"
 #import "HippyJSEnginesMapper.h"
 #import "HippyJSExecutor.h"
@@ -39,27 +40,33 @@
 #import "HippyPerformanceLogger.h"
 #import "HippyRedBox.h"
 #import "HippyTurboModule.h"
+#import "HippyUtils.h"
 
 #import "HPAsserts.h"
-#import "HPComponentTag.h"
 #import "HPConvert.h"
 #import "HPDefaultImageProvider.h"
 #import "HPI18nUtils.h"
 #import "HPInvalidating.h"
 #import "HPLog.h"
+#import "HPOCToHippyValue.h"
 #import "HPToolUtils.h"
-
 #import "TypeConverter.h"
 #import "VFSUriLoader.h"
 
 #include <objc/runtime.h>
 #include <sys/utsname.h>
 
+#include "dom/animation/animation_manager.h"
+#include "dom/dom_manager.h"
 #include "dom/scene.h"
+#include "dom/render_manager.h"
 #include "driver/scope.h"
+#include "footstone/worker_manager.h"
+#include "vfs/uri_loader.h"
+#include "VFSUriHandler.h"
 
 #ifdef ENABLE_INSPECTOR
-#include "integrations/devtools_handler.h"
+#include "devtools/vfs/devtools_handler.h"
 #endif
 
 NSString *const HippyReloadNotification = @"HippyReloadNotification";
@@ -76,7 +83,7 @@ typedef NS_ENUM(NSUInteger, HippyBridgeFields) {
 };
 
 @interface HippyBridge() {
-    NSSet<Class<HPImageProviderProtocol>> *_imageProviders;
+    NSMutableArray<Class<HPImageProviderProtocol>> *_imageProviders;
     __weak id<HippyMethodInterceptorProtocol> _methodInterceptor;
     HippyModulesSetup *_moduleSetup;
     __weak NSOperation *_lastOperation;
@@ -92,6 +99,8 @@ typedef NS_ENUM(NSUInteger, HippyBridgeFields) {
     NSMutableArray<dispatch_block_t> *_nativeSetupBlocks;
     NSURL *_sandboxDirectory;
     std::shared_ptr<VFSUriLoader> _uriLoader;
+    HPUriLoader *_hpLoader;
+    std::mutex _imageProviderMutex;
 }
 
 @property(readwrite, assign) NSUInteger currentIndexOfBundleExecuted;
@@ -186,21 +195,20 @@ dispatch_queue_t HippyBridgeQueue() {
     return [_moduleSetup moduleForClass:moduleClass];
 }
 
-- (NSSet<Class<HPImageProviderProtocol>> *)imageProviders {
+- (void)addImageProviderClass:(Class<HPImageProviderProtocol>)cls {
+    HPAssertParam(cls);
+    std::lock_guard<std::mutex> lock(_imageProviderMutex);
     if (!_imageProviders) {
-        NSMutableSet *set = [NSMutableSet setWithCapacity:8];
-        for (Class moduleClass in self.moduleClasses) {
-            if ([moduleClass conformsToProtocol:@protocol(HPImageProviderProtocol)]) {
-                [set addObject:moduleClass];
-            }
-        }
-        _imageProviders = [NSSet setWithSet:set];
+        _imageProviders = [NSMutableArray arrayWithCapacity:8];
     }
-    return _imageProviders;
+    [_imageProviders addObject:cls];
 }
-
-- (id<HPRenderFrameworkProxy>)frameworkProxy {
-    return _frameworkProxy ?: self;
+- (NSArray<Class<HPImageProviderProtocol>> *)imageProviderClasses {
+    std::lock_guard<std::mutex> lock(_imageProviderMutex);
+    if (!_imageProviders) {
+        _imageProviders = [NSMutableArray arrayWithCapacity:8];
+    }
+    return [_imageProviders copy];
 }
 
 - (NSArray *)modulesConformingToProtocol:(Protocol *)protocol {
@@ -222,9 +230,11 @@ dispatch_queue_t HippyBridgeQueue() {
 
 - (void)reload {
     if ([self.delegate respondsToSelector:@selector(reload:)]) {
+        self.invalidateReason = HPInvalidateReasonReload;
         [self invalidate];
         [self setUp];
         [self.delegate reload:self];
+        self.invalidateReason = HPInvalidateReasonDealloc;
     }
 }
 
@@ -266,9 +276,6 @@ dispatch_queue_t HippyBridgeQueue() {
         });
     } @catch (NSException *exception) {
         HippyBridgeHandleException(exception, self);
-    }
-    if (nil == self.renderContext.frameworkProxy) {
-        self.renderContext.frameworkProxy = self;
     }
 }
 
@@ -382,14 +389,15 @@ dispatch_queue_t HippyBridgeQueue() {
                             @"id": rootTag,
                             @"params": props ?: @{},
                             @"version": HippySDKVersion};
-    footstone::value::HippyValue value = OCTypeToDomValue(param);
+    footstone::value::HippyValue value = [param toHippyValue];
     std::shared_ptr<footstone::value::HippyValue> domValue = std::make_shared<footstone::value::HippyValue>(value);
     self.javaScriptExecutor.pScope->LoadInstance(domValue);
 }
 
-- (void)setUriLoader:(std::shared_ptr<VFSUriLoader>)uriLoader {
-    if (_uriLoader != uriLoader) {
-        _uriLoader = uriLoader;
+- (void)setVFSUriLoader:(std::weak_ptr<VFSUriLoader>)uriLoader {
+    auto loader = uriLoader.lock();
+    if (_uriLoader != loader) {
+        _uriLoader = loader;
         [_javaScriptExecutor setUriLoader:uriLoader];
     }
 #ifdef ENABLE_INSPECTOR
@@ -403,10 +411,17 @@ dispatch_queue_t HippyBridgeQueue() {
 #endif
 }
 
-- (std::shared_ptr<VFSUriLoader>)uriLoader {
-    if (!_uriLoader) {
-        self.uriLoader = std::make_shared<VFSUriLoader>();
+- (void)setHPUriLoader:(HPUriLoader *)hploader {
+    if (_hpLoader != hploader) {
+        _hpLoader = hploader;
     }
+}
+
+- (HPUriLoader *)HPUriLoader {
+    return _hpLoader;
+}
+
+- (std::weak_ptr<VFSUriLoader>)VFSUriLoader {
     return _uriLoader;
 }
 
@@ -419,10 +434,6 @@ dispatch_queue_t HippyBridgeQueue() {
     }
     HPAssert(self.javaScriptExecutor, @"js executor must not be null");
     [_performanceLogger markStartForTag:HippyExecuteSource];
-    BOOL shouldInvalidate = YES;
-    if ([self.delegate respondsToSelector:@selector(scriptWillBeExecuted:sourceURL:)]) {
-        shouldInvalidate = [self.delegate scriptWillBeExecuted:script sourceURL:sourceURL];
-    }
     __weak HippyBridge *weakSelf = self;
     [self.javaScriptExecutor executeApplicationScript:script sourceURL:sourceURL onComplete:^(id result ,NSError *error) {
         HippyBridge *strongSelf = weakSelf;
@@ -431,7 +442,7 @@ dispatch_queue_t HippyBridgeQueue() {
             return;
         }
         if (error) {
-            [strongSelf stopLoadingWithError:error scriptSourceURL:sourceURL shouldInvalidateContext:shouldInvalidate];
+            [strongSelf stopLoadingWithError:error scriptSourceURL:sourceURL];
         }
         else {
             dispatch_async(dispatch_get_main_queue(), ^{
@@ -445,31 +456,24 @@ dispatch_queue_t HippyBridgeQueue() {
     }];
 }
 
-- (void)stopLoadingWithError:(NSError *)error scriptSourceURL:(NSURL *)sourceURL shouldInvalidateContext:(BOOL)shouldInvalidate {
+- (void)stopLoadingWithError:(NSError *)error scriptSourceURL:(NSURL *)sourceURL {
     HPAssertMainQueue();
     if (![self isValid]) {
         return;
     }
-    if (shouldInvalidate) {
-        __weak HippyBridge *weakSelf = self;
-        [self.javaScriptExecutor executeBlockOnJavaScriptQueue:^{
-            HippyBridge *strongSelf = weakSelf;
-            if (!strongSelf || ![strongSelf isValid]) {
-                [strongSelf.javaScriptExecutor invalidate];
-            }
-        }];
-    }
+    __weak HippyBridge *weakSelf = self;
+    [self.javaScriptExecutor executeBlockOnJavaScriptQueue:^{
+        HippyBridge *strongSelf = weakSelf;
+        if (!strongSelf || ![strongSelf isValid]) {
+            [strongSelf.javaScriptExecutor invalidate];
+        }
+    }];
     NSDictionary *userInfo = @{@"bridge": self, @"error": error, @"sourceURL": sourceURL};
     [[NSNotificationCenter defaultCenter] postNotificationName:HippyJavaScriptDidFailToLoadNotification
                                                         object:nil
                                                       userInfo:userInfo];
-
     if ([error userInfo][HPJSStackTraceKey]) {
         [self.redBox showErrorMessage:[error localizedDescription] withStack:[error userInfo][HPJSStackTraceKey]];
-    }
-    if (shouldInvalidate) {
-        NSError *retError = HPErrorFromErrorAndModuleName(error, self.moduleName);
-        HippyBridgeFatal(retError, self);
     }
 }
 
@@ -734,14 +738,12 @@ dispatch_queue_t HippyBridgeQueue() {
 }
 
 - (void)setupDomManager:(std::shared_ptr<hippy::DomManager>)domManager
-                  rootNode:(std::weak_ptr<hippy::RootNode>)rootNode
-             renderContext:(id<HPRenderContext>)renderContext {
+                  rootNode:(std::weak_ptr<hippy::RootNode>)rootNode {
     __weak HippyBridge *weakSelf = self;
     dispatch_block_t block = ^(void){
         HippyBridge *strongSelf = weakSelf;
         HPAssertParam(domManager);
-        HPAssertParam(renderContext);
-        if (!strongSelf || !domManager || !renderContext) {
+        if (!strongSelf || !domManager) {
             return;
         }
         strongSelf->_javaScriptExecutor.pScope->SetDomManager(domManager);
@@ -749,12 +751,11 @@ dispatch_queue_t HippyBridgeQueue() {
         auto devtools_data_source = strongSelf->_javaScriptExecutor.pScope->GetDevtoolsDataSource();
         if (devtools_data_source) {
             hippy::DomManager::Insert(domManager);
-            strongSelf->_javaScriptExecutor.pScope->GetDevtoolsDataSource()->Bind(0, domManager->GetId(), 0); // runtime_id for iOS is useless, set 0
+            strongSelf->_javaScriptExecutor.pScope->GetDevtoolsDataSource()->Bind(domManager);
             devtools_data_source->SetRootNode(rootNode);
         }
       #endif
         strongSelf->_javaScriptExecutor.pScope->SetRootNode(rootNode);
-        strongSelf->_renderContext = renderContext;
     };
     block();
     [_nativeSetupBlocks addObject:block];
@@ -792,17 +793,9 @@ dispatch_queue_t HippyBridgeQueue() {
     [_bundleURLs removeAllObjects];
     [_nativeSetupBlocks removeAllObjects];
     [_instanceBlocks removeAllObjects];
-    id<HPRenderContext> renderContext = self.renderContext;
-    self.renderContext = nil;
-    [[renderContext rootViews] enumerateObjectsUsingBlock:^(__kindof UIView * _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
-        if ([obj respondsToSelector:@selector(invalidate)]) {
-            [obj performSelector:@selector(invalidate)];
-        }
-        NSDictionary *param = @{@"id": [obj componentTag]};
-        footstone::value::HippyValue value = OCTypeToDomValue(param);
-        std::shared_ptr<footstone::value::HippyValue> domValue = std::make_shared<footstone::value::HippyValue>(value);
-        self.javaScriptExecutor.pScope->UnloadInstance(domValue);
-    }];
+    if ([self.delegate respondsToSelector:@selector(invalidateForReason:bridge:)]) {
+        [self.delegate invalidateForReason:self.invalidateReason bridge:self];
+    }
     // Invalidate modules
     dispatch_group_t group = dispatch_group_create();
     for (HippyModuleData *moduleData in [_moduleSetup moduleDataByID]) {
@@ -890,7 +883,7 @@ dispatch_queue_t HippyBridgeQueue() {
     id jsonArray = @{
         @"remoteModuleConfig": config,
     };
-    return HPJSONStringify(jsonArray, NULL);
+    return HippyJSONStringify(jsonArray, NULL);
 }
 
 - (void)setRedBoxShowEnabled:(BOOL)enabled {
@@ -916,25 +909,6 @@ dispatch_queue_t HippyBridgeQueue() {
     // getTurboModule
     HippyOCTurboModule *turboModule = [self.turboModuleManager turboModuleWithName:name];
     return turboModule;
-}
-
-#pragma mark HPRenderFrameworkProxy Delegate Implementation
-- (NSString *)standardizeAssetUrlString:(NSString *)UrlString forRenderContext:(nonnull id<HPRenderContext>)renderContext {
-    if ([HippyBridge isHippyLocalFileURLString:UrlString]) {
-        return [self absoluteStringFromHippyLocalFileURLString:UrlString];
-    }
-    return UrlString;
-}
-
-- (Class<HPImageProviderProtocol>)imageProviderClassForRenderContext:(id<HPRenderContext>)renderContext {
-    if (self.frameworkProxy != self && [self.frameworkProxy respondsToSelector:@selector(imageProviderClassForRenderContext:)]) {
-        return [self.frameworkProxy imageProviderClassForRenderContext:renderContext];
-    }
-    return [HPDefaultImageProvider class];
-}
-
-- (std::shared_ptr<VFSUriLoader>)URILoader { 
-    return [self uriLoader];
 }
 
 - (void)immediatelyCallTimer:(NSNumber *)timer {

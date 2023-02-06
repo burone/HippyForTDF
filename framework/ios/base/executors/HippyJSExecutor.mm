@@ -33,9 +33,11 @@
 #import "HippyOCTurboModule+Inner.h"
 #import "HippyPerformanceLogger.h"
 #import "HippyRedBox.h"
+#import "HippyUtils.h"
 #import "HippyTurboModuleManager.h"
 #import "HPLog.h"
 #import "HPToolUtils.h"
+#import "HPFootstoneUtils.h"
 #import "NSObject+CtxValue.h"
 #import "TypeConverter.h"
 
@@ -100,7 +102,6 @@ using WeakCtxValuePtr = std::weak_ptr<hippy::napi::CtxValue>;
         NSString *wsURL = [self completeWSURLWithBridge:bridge];
         auto workerManager = std::make_shared<footstone::WorkerManager>(1);
         auto devtools_data_source = std::make_shared<hippy::devtools::DevtoolsDataSource>([wsURL UTF8String], workerManager);
-        devtools_data_source->SetRuntimeDebugMode(bridge.debugMode);
         self.pScope->SetDevtoolsDataSource(devtools_data_source);
     }
 #endif
@@ -554,7 +555,7 @@ static NSError *executeApplicationScript(NSString *script, NSURL *sourceURL, Hip
         return;
     }
     if (HP_DEBUG) {
-        HPAssert(HPJSONParse(script, NULL) != nil, @"%@ wasn't valid JSON!", script);
+        HPAssert(HippyJSONParse(script, NULL) != nil, @"%@ wasn't valid JSON!", script);
     }
 
     __weak HippyJSExecutor *weakSelf = self;

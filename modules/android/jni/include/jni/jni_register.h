@@ -51,7 +51,6 @@ class JNIRegisterData {
 class JNIRegister {
  public:
   static std::unique_ptr<JNIRegister> &GetInstance();
-  static bool RegisterMethods(JNIEnv *j_env);
 
   JNIRegister() = default;
   JNIRegister(const JNIRegister &) = delete;
@@ -84,11 +83,11 @@ class JNIRegister {
 }
 }
 
-#define REGISTER_JNI_INTERNAL(clazz, name, signature, pointer, is_static, key) \
-  auto __REGISTER_JNI_##key = []() {                                           \
+#define REGISTER_JNI_INTERNAL(clazz, name, signature, pointer, is_static, key)        \
+  auto __REGISTER_JNI_##key = []() {                                                  \
     hippy::JNIRegister::GetInstance()->RegisterJNIModule(                             \
-        clazz, name, signature, reinterpret_cast<void *>(pointer), is_static); \
-    return 0;                                                                  \
+        clazz, name, signature, reinterpret_cast<void *>(pointer), is_static);        \
+    return 0;                                                                         \
   }();
 
 #define REGISTER_JNI_TEMP(clazz, name, signature, pointer, is_static, key) \
@@ -100,3 +99,6 @@ class JNIRegister {
 
 #define REGISTER_STATIC_JNI(clazz, name, signature, pointer) \
   REGISTER_JNI_TEMP(clazz, name, signature, pointer, true, __COUNTER__)
+
+//#undef REGISTER_JNI_TEMP
+//#undef REGISTER_JNI_INTERNAL

@@ -17,7 +17,7 @@
 package com.tencent.mtt.hippy.bridge.libraryloader;
 
 import android.text.TextUtils;
-import com.tencent.mtt.hippy.BuildConfig;
+import com.openhippy.framework.BuildConfig;
 import com.tencent.mtt.hippy.adapter.soloader.HippySoLoaderAdapter;
 
 public class LibraryLoader {
@@ -26,7 +26,7 @@ public class LibraryLoader {
     private final static String[] SO_NAME_LIST = new String[]{ "hippy" };
 
     public static void loadLibraryIfNeed(HippySoLoaderAdapter soLoaderAdapter) {
-        if (hasLoaded || BuildConfig.ENABLE_SO_DOWNLOAD) {
+        if (hasLoaded || BuildConfig.ENABLE_SO_LOAD_EXTERNAL) {
             return;
         }
         synchronized (LibraryLoader.class) {

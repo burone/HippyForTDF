@@ -21,15 +21,15 @@
  */
 
 #import "HPAsserts.h"
-#import "HPDefaultImageProvider.h"
 #import "HPToolUtils.h"
 #import "NativeRenderImageViewManager.h"
 #import "NativeRenderImageView.h"
+#import "NativeRenderImpl.h"
 #import "TypeConverter.h"
 
+#include "VFSUriLoader.h"
+
 @interface NativeRenderImageViewManager () {
-    Class<HPImageProviderProtocol> _imageProviderClass;
-    NSUInteger _sequence;
 }
 
 @end
@@ -66,25 +66,32 @@ NATIVE_RENDER_CUSTOM_VIEW_PROPERTY(source, NSArray, NativeRenderImageView) {
         return;
     }
     NSString *standardizeAssetUrlString = path;
-    if ([self.renderContext.frameworkProxy respondsToSelector:@selector(standardizeAssetUrlString:forRenderContext:)]) {
-        standardizeAssetUrlString = [self.renderContext.frameworkProxy standardizeAssetUrlString:path forRenderContext:self.renderContext];
-    }
-    NSURL *url = HPURLWithString(standardizeAssetUrlString, nil);
     __weak NativeRenderImageView *weakView = view;
-    HPAssert([self.renderContext.frameworkProxy respondsToSelector:@selector(URILoader)], @"frameworkproxy must respond to selector URILoader");
-    self.renderContext.frameworkProxy.URILoader->loadContentsAsynchronously(url, nil, ^(NSData *data, NSURLResponse *response, NSError *error) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            NativeRenderImageView *strongView = weakView;
-            if (strongView) {
-                Class cls = [self imageProviderClass];
-                id<HPImageProviderProtocol> imageProvider = [[cls alloc] init];
-                imageProvider.scale = [[UIScreen mainScreen] scale];
-                imageProvider.imageDataPath = standardizeAssetUrlString;
-                [imageProvider setImageData:data];
-                [strongView setImageProvider:imageProvider];
-                [strongView reloadImage];
+    auto loader = [[self renderImpl] VFSUriLoader];
+    if (!loader) {
+        return;
+    }
+    loader->RequestUntrustedContent(path, nil, ^(NSData *data, NSURLResponse *response, NSError *error) {
+        NativeRenderImpl *renderImpl = self.renderImpl;
+        id<HPImageProviderProtocol> imageProvider = nil;
+        if (renderImpl) {
+            for (Class<HPImageProviderProtocol> cls in [renderImpl imageProviderClasses]) {
+                if ([cls canHandleData:data]) {
+                    imageProvider = [[(Class)cls alloc] init];
+                    break;
+                }
             }
-        });
+            HPAssert(imageProvider, @"Image Provider is required");
+            imageProvider.imageDataPath = standardizeAssetUrlString;
+            [imageProvider setImageData:data];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NativeRenderImageView *strongView = weakView;
+                if (strongView) {
+                    [strongView setImageProvider:imageProvider];
+                    [strongView reloadImage];
+                }
+            });
+        }
     });
 }
 
@@ -112,23 +119,6 @@ NATIVE_RENDER_VIEW_BORDER_RADIUS_PROPERTY(BottomRight)
 
 - (UIView *)view {
     return [[NativeRenderImageView alloc] init];
-}
-
-- (Class<HPImageProviderProtocol>)imageProviderClass {
-    if (!_imageProviderClass) {
-        if ([self.renderContext.frameworkProxy respondsToSelector:@selector(imageProviderClassForRenderContext:)]) {
-            _imageProviderClass = [self.renderContext.frameworkProxy imageProviderClassForRenderContext:self.renderContext];
-        }
-        else {
-            _imageProviderClass = [HPDefaultImageProvider class];
-        }
-    }
-    return _imageProviderClass;
-}
-
-- (id<HPImageProviderProtocol>)getNewImageProviderInstance {
-    Class cls = [self imageProviderClass];
-    return [[cls alloc] init];
 }
 
 @end

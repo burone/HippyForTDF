@@ -20,12 +20,13 @@
  * limitations under the License.
  */
 
+#import "NativeRenderImpl.h"
 #import "NativeRenderManager.h"
 #import "NativeRenderObjectText.h"
-#import "NativeRenderImpl.h"
-#import "dom/layout_node.h"
-#import "dom/dom_manager.h"
 #import "RenderVsyncManager.h"
+
+#include "dom/dom_manager.h"
+#include "dom/layout_node.h"
 
 using HippyValue = footstone::value::HippyValue;
 using RenderManager = hippy::RenderManager;
@@ -158,29 +159,46 @@ void NativeRenderManager::RegisterRootView(UIView *view, std::weak_ptr<hippy::Ro
     }
 }
 
+void NativeRenderManager::UnregisterRootView(uint32_t id) {
+    @autoreleasepool {
+        [renderImpl_ unregisterRootViewFromTag:@(id)];
+    }
+}
+
+NSArray<UIView *> *NativeRenderManager::rootViews() {
+    @autoreleasepool {
+        return [renderImpl_ rootViews];
+    }
+}
+
 void NativeRenderManager::SetDomManager(std::weak_ptr<DomManager> dom_manager) {
     @autoreleasepool {
         [renderImpl_ setDomManager:dom_manager];
     }
 }
 
-void NativeRenderManager::SetFrameworkProxy(id<HPRenderFrameworkProxy> proxy) {
-    renderImpl_.frameworkProxy = proxy;
-}
-
-id<HPRenderFrameworkProxy> NativeRenderManager::GetFrameworkProxy() {
-    return renderImpl_.frameworkProxy;
-}
-
 void NativeRenderManager::SetUICreationLazilyEnabled(bool enabled) {
     renderImpl_.uiCreationLazilyEnabled = enabled;
 }
 
-id<NativeRenderContext> NativeRenderManager::GetRenderContext() {
-    return renderImpl_;
+void NativeRenderManager::AddImageProviderClass(Class<HPImageProviderProtocol> cls) {
+    @autoreleasepool {
+        [renderImpl_ addImageProviderClass:cls];
+    }
+}
+
+NSArray<Class<HPImageProviderProtocol>> *NativeRenderManager::GetImageProviderClasses() {
+    @autoreleasepool {
+        return [renderImpl_ imageProviderClasses];
+    }
+}
+
+void NativeRenderManager::SetVFSUriLoader(std::shared_ptr<VFSUriLoader> loader) {
+    renderImpl_.VFSUriLoader = loader;
 }
 
 NativeRenderManager::~NativeRenderManager() {
     [renderImpl_ invalidate];
     renderImpl_ = nil;
 }
+ 

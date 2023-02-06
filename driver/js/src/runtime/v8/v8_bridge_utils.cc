@@ -27,7 +27,6 @@
 #include <future>
 #include <utility>
 
-#include "devtools/devtools_macro.h"
 #include "driver/napi/v8/js_native_api_v8.h"
 #include "driver/napi/v8/serializer.h"
 #include "footstone/deserializer.h"
@@ -82,7 +81,7 @@ std::function<void(std::shared_ptr<Runtime>,
     const string_view&,
     const string_view&) {};
 
-int64_t V8BridgeUtils::InitInstance(bool enable_v8_serialization,
+int32_t V8BridgeUtils::InitInstance(bool enable_v8_serialization,
                                     bool is_dev_module,
                                     const string_view& global_config,
                                     int64_t group,
@@ -92,10 +91,8 @@ int64_t V8BridgeUtils::InitInstance(bool enable_v8_serialization,
                                     const std::any& bridge,
                                     const RegisterFunction& scope_cb,
                                     const RegisterFunction& call_native_cb,
-                                    const string_view& data_dir,
-                                    const string_view& ws_url) {
-  std::shared_ptr<Runtime> runtime = std::make_shared<Runtime>(enable_v8_serialization,
-                                                               is_dev_module);
+                                    uint32_t devtools_id) {
+  auto runtime = std::make_shared<Runtime>(enable_v8_serialization, is_dev_module);
   runtime->SetData(kBridgeSlot, std::move(bridge));
   int32_t runtime_id = runtime->GetId();
   Runtime::Insert(runtime);
@@ -107,7 +104,7 @@ int64_t V8BridgeUtils::InitInstance(bool enable_v8_serialization,
     isolate->SetData(kRuntimeSlotIndex, reinterpret_cast<void*>(runtime_id));
 #if defined(ENABLE_INSPECTOR) && !defined(V8_WITHOUT_INSPECTOR)
     std::shared_ptr<Runtime> runtime = Runtime::Find(runtime_id);
-    if (runtime->IsDebug()) {
+    if (runtime->IsDebug() && !runtime->GetEngine()->GetInspectorClient()) {
       auto inspector = std::make_shared<V8InspectorClientImpl>(runtime->GetEngine()->GetJsTaskRunner());
       runtime->GetEngine()->SetInspectorClient(inspector);
     }
@@ -119,10 +116,7 @@ int64_t V8BridgeUtils::InitInstance(bool enable_v8_serialization,
 
 #if defined(ENABLE_INSPECTOR) && !defined(V8_WITHOUT_INSPECTOR)
   if (is_dev_module) {
-    auto devtools_data_source = std::make_shared<hippy::devtools::DevtoolsDataSource>(
-        StringViewUtils::ToStdString(StringViewUtils::ConvertEncoding(
-            ws_url, string_view::Encoding::Utf8).utf8_value()), worker_manager);
-    devtools_data_source->SetRuntimeDebugMode(is_dev_module);
+    auto devtools_data_source = devtools::DevtoolsDataSource::Find(devtools_id);
     runtime->SetDevtoolsDataSource(devtools_data_source);
   }
 #endif
@@ -189,14 +183,15 @@ int64_t V8BridgeUtils::InitInstance(bool enable_v8_serialization,
     }
   }
   if (!engine) {
-    auto worker_runner = worker_manager->CreateTaskRunner(kWorkerRunnerName);
-    engine = std::make_shared<Engine>(task_runner, worker_runner, std::move(engine_cb_map), param);
+    engine = std::make_shared<Engine>();
     if (group != kDefaultGroupId) {
       std::lock_guard<std::mutex> lock(engine_mutex);
       reuse_engine_map[group] = std::make_pair(engine, 1);
     }
   }
   runtime->SetEngine(engine);
+  auto worker_runner = worker_manager->CreateTaskRunner(kWorkerRunnerName);
+  engine->AsyncInit(task_runner, worker_runner, std::move(engine_cb_map), param);
   auto scope = engine->CreateScope("", std::move(scope_cb_map));
   runtime->SetScope(scope);
   FOOTSTONE_DLOG(INFO) << "group = " << group;
@@ -205,8 +200,6 @@ int64_t V8BridgeUtils::InitInstance(bool enable_v8_serialization,
 
 #ifdef ENABLE_INSPECTOR
   if (is_dev_module) {
-    DEVTOOLS_INIT_VM_TRACING_CACHE(StringViewUtils::ToStdString(StringViewUtils::ConvertEncoding(
-        data_dir, string_view::Encoding::Utf8).utf8_value()));
     scope->SetDevtoolsDataSource(runtime->GetDevtoolsDataSource());
 #ifndef V8_WITHOUT_INSPECTOR
     scope->GetDevtoolsDataSource()->SetVmRequestHandler([runtime_id](std::string data) {
@@ -408,12 +401,6 @@ void V8BridgeUtils::DestroyInstance(int64_t runtime_id, const std::function<void
 #else
     runtime->GetScope()->WillExit();
 #endif
-#ifdef ENABLE_INSPECTOR
-    auto devtools_data_source = runtime->GetScope()->GetDevtoolsDataSource();
-    if (devtools_data_source) {
-      devtools_data_source->Destroy(is_reload);
-    }
-#endif
     FOOTSTONE_LOG(INFO) << "SetScope nullptr";
     runtime->SetScope(nullptr);
     FOOTSTONE_LOG(INFO) << "erase runtime";
@@ -428,7 +415,7 @@ void V8BridgeUtils::DestroyInstance(int64_t runtime_id, const std::function<void
   auto runner = runtime->GetEngine()->GetJsTaskRunner();
   runner->PostTask(std::move(cb));
   FOOTSTONE_DLOG(INFO) << "destroy, group = " << group;
-  if (group != kDebuggerGroupId && group != kDefaultGroupId) {
+  if ((group == kDebuggerGroupId && !is_reload) || group != kDefaultGroupId) {
     std::lock_guard<std::mutex> lock(engine_mutex);
     auto it = reuse_engine_map.find(group);
     if (it != reuse_engine_map.end()) {
@@ -699,7 +686,6 @@ void V8BridgeUtils::UnloadInstance(int32_t runtime_id, byte_string&& buffer_data
     };
     runner->PostTask(std::move(callback));
 }
-
 }
 }
 }

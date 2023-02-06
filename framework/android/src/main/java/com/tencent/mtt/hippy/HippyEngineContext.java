@@ -20,11 +20,13 @@ import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import com.tencent.devtools.DevtoolsManager;
 import com.tencent.mtt.hippy.bridge.HippyBridgeManager;
 import com.tencent.mtt.hippy.common.ThreadExecutor;
 import com.tencent.mtt.hippy.devsupport.DevSupportManager;
 import com.tencent.mtt.hippy.modules.HippyModuleManager;
 import com.tencent.vfs.VfsManager;
+import java.util.HashMap;
 import java.util.Map;
 
 public interface HippyEngineContext {
@@ -32,7 +34,7 @@ public interface HippyEngineContext {
     String getComponentName();
 
     @Nullable
-    Map<String, Object> getNativeParams();
+    HashMap<String, Object> getNativeParams();
 
     @NonNull
     VfsManager getVfsManager();
@@ -44,6 +46,8 @@ public interface HippyEngineContext {
     HippyBridgeManager getBridgeManager();
 
     DevSupportManager getDevSupportManager();
+
+    DevtoolsManager getDevtoolsManager();
 
     ThreadExecutor getThreadExecutor();
 
@@ -57,15 +61,13 @@ public interface HippyEngineContext {
 
     int getEngineId();
 
-    int getWorkerManagerId();
-
     int getDomManagerId();
 
     int getVfsId();
 
-    void onRuntimeInitialized(long runtimeId);
+    int getDevtoolsId();
+
+    void onRuntimeInitialized();
 
     void onBridgeDestroyed(boolean isReload, Throwable e);
-
-    void removeRootView(int rootId);
 }

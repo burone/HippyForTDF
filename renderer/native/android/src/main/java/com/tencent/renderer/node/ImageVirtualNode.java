@@ -30,14 +30,14 @@ import android.text.style.ImageSpan;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.tencent.link_supplier.proxy.framework.ImageDataSupplier;
-import com.tencent.link_supplier.proxy.framework.ImageLoaderAdapter;
 import com.tencent.mtt.hippy.annotation.HippyControllerProps;
 import com.tencent.mtt.hippy.dom.node.NodeProps;
 import com.tencent.mtt.hippy.utils.ContextHolder;
 import com.tencent.mtt.hippy.utils.PixelUtil;
 import com.tencent.renderer.NativeRender;
 
+import com.tencent.renderer.component.image.ImageDataSupplier;
+import com.tencent.renderer.component.image.ImageLoaderAdapter;
 import com.tencent.renderer.component.text.TextGestureSpan;
 import com.tencent.renderer.component.text.TextImageSpan;
 import java.util.List;
@@ -88,9 +88,10 @@ public class ImageVirtualNode extends VirtualNode {
     @NonNull
     protected TextImageSpan createImageSpan() {
         Drawable drawable = null;
-        ImageLoaderAdapter adapter = mNativeRenderer.getImageLoaderAdapter();
-        if (mDefaultSource != null && adapter != null) {
-            ImageDataSupplier supplier = adapter.getLocalImage(mDefaultSource, mWidth, mHeight);
+        ImageLoaderAdapter imageLoader = mNativeRenderer.getImageLoader();
+        if (mDefaultSource != null && imageLoader != null) {
+            ImageDataSupplier supplier = imageLoader.fetchImageSync(mDefaultSource, null, mWidth,
+                    mHeight);
             Bitmap bitmap = supplier.getBitmap();
             if (bitmap != null) {
                 Resources resources = ContextHolder.getAppContext().getResources();

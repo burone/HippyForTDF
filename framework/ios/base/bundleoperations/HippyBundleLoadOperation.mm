@@ -24,6 +24,8 @@
 #import "HippyBridge+VFSLoader.h"
 #import "HippyPerformanceLogger.h"
 
+#include <mutex>
+
 @interface HippyBundleLoadOperation () {
     HippyBridge *_bridge;
     NSURL *_bundleURL;
@@ -68,7 +70,12 @@
     HippyPerformanceLogger *performanceLogger = bridge?bridge.performanceLogger:nil;
     [performanceLogger markStartForTag:HippyPLScriptDownload];
     __weak HippyBundleLoadOperation *weakSelf = self;
-    [bridge loadContentsAsynchronouslyFromUrl:_bundleURL params:nil completionHandler:^(NSData * _Nonnull data, NSURLResponse * _Nonnull response, NSError * _Nonnull error) {
+    [bridge loadContentsAsynchronouslyFromUrl:[_bundleURL absoluteString]
+                                       method:@"get"
+                                       params:nil
+                                         body:nil
+                                     progress:nil
+                            completionHandler:^(NSData * _Nonnull data, NSURLResponse * _Nonnull response, NSError * _Nonnull error) {
         HippyBundleLoadOperation *strongSelf = weakSelf;
         if (!strongSelf || strongSelf.cancelled) {
             strongSelf.finished = YES;

@@ -1,4 +1,24 @@
-#define ENABLE_LAYER_OPTIMIZATION
+/*
+ * Tencent is pleased to support the open source community by making
+ * Hippy available.
+ *
+ * Copyright (C) 2022 THL A29 Limited, a Tencent company.
+ * All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#define EXPERIMENT_LAYER_OPTIMIZATION
 
 #include "dom/dom_manager.h"
 
@@ -39,8 +59,6 @@ DomManager::DomManager() {
   id_ = global_dom_manager_key.fetch_add(1);
 }
 
-DomManager::~DomManager() = default;
-
 void DomManager::Insert(const std::shared_ptr<DomManager>& dom_manager) {
   std::lock_guard<std::mutex> lock(mutex);
   dom_manager_map[dom_manager->id_] = dom_manager;
@@ -68,7 +86,7 @@ bool DomManager::Erase(uint32_t id) {
 bool DomManager::Erase(const std::shared_ptr<DomManager>& dom_manager) { return DomManager::Erase(dom_manager->id_); }
 
 void DomManager::SetRenderManager(const std::weak_ptr<RenderManager>& render_manager) {
-#ifdef ENABLE_LAYER_OPTIMIZATION
+#ifdef EXPERIMENT_LAYER_OPTIMIZATION
   optimized_render_manager_ = std::make_shared<LayerOptimizedRenderManager>(render_manager.lock());
   render_manager_ = optimized_render_manager_;
 #else

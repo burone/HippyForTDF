@@ -45,7 +45,7 @@ endif()
 # region vm
 if ("${JS_ENGINE}" STREQUAL "V8")
   GlobalPackages_Add(v8)
-  target_link_libraries(${PROJECT_NAME} PRIVATE v8)
+  target_link_libraries(${PROJECT_NAME} PUBLIC v8)
 
   # The following definitions are used by PUBLIC header files
   target_compile_definitions(${PROJECT_NAME} PUBLIC "JS_V8")
@@ -69,16 +69,18 @@ GlobalPackages_Add(vfs)
 target_include_directories(${PROJECT_NAME} PRIVATE $<TARGET_PROPERTY:vfs,INTERFACE_INCLUDE_DIRECTORIES>)
 # endregion
 
-# region devtools
-if (ENABLE_INSPECTOR)
-  GlobalPackages_Add(devtools_backend)
-  target_link_libraries(${PROJECT_NAME} PRIVATE devtools_backend)
-endif ()
-# endregion
-
 # region dom
 GlobalPackages_Add(dom)
 target_link_libraries(${PROJECT_NAME} PRIVATE dom)
+# endregion
+
+# region devtools
+if (ENABLE_INSPECTOR)
+  GlobalPackages_Add(devtools_backend)
+  target_link_libraries(${PROJECT_NAME} PUBLIC devtools_backend)
+  GlobalPackages_Add(devtools_integration)
+  target_link_libraries(${PROJECT_NAME} PUBLIC devtools_integration)
+endif ()
 # endregion
 
 # region source set
@@ -92,43 +94,31 @@ set(SOURCE_SET
     src/napi/callback_info.cc
     src/napi/js_native_turbo.cc
     src/scope.cc)
-if (ENABLE_INSPECTOR)
-  list(APPEND SOURCE_SET
-      src/devtools/adapter/impl/hippy_dom_tree_adapter.cc
-      src/devtools/adapter/impl/hippy_screen_adapter.cc
-      src/devtools/adapter/impl/hippy_tracing_adapter.cc
-      src/devtools/devtools_data_source.cc
-      src/devtools/devtools_utils.cc)
-endif ()
 if ("${JS_ENGINE}" STREQUAL "V8")
   list(APPEND SOURCE_SET
-      src/napi/v8/js_native_api_v8.cc
-      src/napi/v8/js_native_turbo_v8.cc
-      src/napi/v8/serializer.cc
-      src/runtime/v8/interrupt_queue.cc
-      src/runtime/v8/runtime.cc
-      src/runtime/v8/v8_bridge_utils.cc)
+          src/napi/v8/js_native_api_v8.cc
+          src/napi/v8/js_native_turbo_v8.cc
+          src/napi/v8/serializer.cc
+          src/runtime/v8/interrupt_queue.cc
+          src/runtime/v8/runtime.cc
+          src/runtime/v8/v8_bridge_utils.cc)
   if (NOT V8_WITHOUT_INSPECTOR)
     list(APPEND SOURCE_SET
         src/runtime/v8/inspector/v8_channel_impl.cc
         src/runtime/v8/inspector/v8_inspector_client_impl.cc)
-    if (ENABLE_INSPECTOR)
-      list(APPEND SOURCE_SET
-          src/devtools/trace_control.cc)
-    endif ()
   endif ()
 elseif ("${JS_ENGINE}" STREQUAL "JSC")
   list(APPEND SOURCE_SET
-      src/napi/jsc/js_native_api_jsc.cc
-      src/napi/jsc/js_native_api_value_jsc.cc
-      src/napi/jsc/js_native_jsc_helper.cc
-      src/napi/jsc/js_native_turbo_jsc.cc)
+          src/napi/jsc/js_native_api_jsc.cc
+          src/napi/jsc/js_native_api_value_jsc.cc
+          src/napi/jsc/js_native_jsc_helper.cc
+          src/napi/jsc/js_native_turbo_jsc.cc)
 endif ()
 set(SOURCE_SET_STANDALONE
-    src/modules/console_module.cc
-    src/modules/contextify_module.cc
-    src/modules/timer_module.cc
-    src/modules/ui_manager_module.cc)
+        src/modules/console_module.cc
+        src/modules/contextify_module.cc
+        src/modules/timer_module.cc
+        src/modules/ui_manager_module.cc)
 target_sources(${PROJECT_NAME} PRIVATE ${SOURCE_SET})
 # The linker treats `.a` and `.o` files are different:
 #   * `.o` files from `.a` file only referenced `.o` object files are linked.

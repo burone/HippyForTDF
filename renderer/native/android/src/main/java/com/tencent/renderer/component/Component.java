@@ -50,8 +50,11 @@ import java.util.Map;
 
 public class Component implements Drawable.Callback {
 
+    /** Mark should clip children when drawing. */
     private static final int FLAG_CLIP_BOUNDS = 0x00000001;
+    /** Mark node has gesture related attributes. */
     private static final int FLAG_GESTURE_ENABLE = 0x00000002;
+    /** Mark should use and update {@link LayerDrawable} for ripple effect. */
     private static final int FLAG_UPDATE_LAYER = 0x00000004;
     private static final String PROPERTY_RIPPLE_COLOR = "color";
     private static final String PROPERTY_RIPPLE_RADIUS = "rippleRadius";
@@ -177,7 +180,7 @@ public class Component implements Drawable.Callback {
      * Get background layer drawable
      *
      * <p>At present, display RippleDrawable by setting the view background, it may not be the best
-     * implementation, because we cannot flatten the view for ripple effect.
+     * implementation, because we cannot flatten the view for ripple effect.</p>
      *
      * @return the background drawable {@link LayerDrawable}
      */

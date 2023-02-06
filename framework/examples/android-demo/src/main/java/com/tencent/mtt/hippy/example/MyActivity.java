@@ -19,24 +19,22 @@ package com.tencent.mtt.hippy.example;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.os.Bundle;
-import android.util.Log;
 import android.view.ViewGroup;
 import android.view.Window;
 
-import com.tencent.link_supplier.proxy.renderer.ControllerProvider;
+import androidx.annotation.Nullable;
 import com.tencent.mtt.hippy.HippyEngine;
 import com.tencent.mtt.hippy.HippyAPIProvider;
 import com.tencent.mtt.hippy.HippyEngine.EngineInitStatus;
 import com.tencent.mtt.hippy.HippyEngine.ModuleLoadStatus;
-import com.tencent.mtt.hippy.HippyRootView;
-import com.tencent.mtt.hippy.IHippyNativeLogHandler;
 import com.tencent.mtt.hippy.adapter.DefaultLogAdapter;
 import com.tencent.mtt.hippy.adapter.exception.HippyExceptionHandlerAdapter;
+import com.tencent.mtt.hippy.common.Callback;
 import com.tencent.mtt.hippy.common.HippyJsException;
 import com.tencent.mtt.hippy.common.HippyMap;
-import com.tencent.mtt.hippy.example.adapter.MyImageLoader;
 import com.tencent.mtt.hippy.utils.LogUtils;
 
+import com.tencent.renderer.ControllerProvider;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -58,8 +56,6 @@ public class MyActivity extends Activity
 			// 必须：宿主（Hippy的使用者）的Context
 			// 若存在多个Activity加载多个业务jsbundle的情况，则这里初始化引擎时建议使用Application的Context
 			initParams.context = this;
-			// 必须：图片加载器
-			initParams.imageLoader = new MyImageLoader(this.getApplicationContext());
 			initParams.debugServerHost = "localhost:38989";
 			// 可选：是否设置为debug模式，默认为false。调试模式下，所有jsbundle都是从debug server上下载
 			initParams.debugMode = false;
@@ -193,8 +189,12 @@ public class MyActivity extends Activity
 	@Override
 	protected void onDestroy() {
 		// 3/3. 摧毁hippy前端模块，摧毁hippy引擎
-		mHippyEngine.destroyModule(mHippyView);
-		mHippyEngine.destroyEngine();
+		mHippyEngine.destroyModule(mHippyView, new Callback<Boolean>() {
+			@Override
+			public void callback(@Nullable Boolean result, @Nullable Throwable e) {
+				mHippyEngine.destroyEngine();
+			}
+		});
 		super.onDestroy();
 	}
 

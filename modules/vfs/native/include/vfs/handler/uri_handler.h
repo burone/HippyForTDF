@@ -26,6 +26,8 @@
 #include <unordered_map>
 
 #include "footstone/string_view.h"
+#include "vfs/request_job.h"
+#include "vfs/job_response.h"
 
 namespace hippy {
 inline namespace vfs {
@@ -34,44 +36,18 @@ class UriHandler {
  public:
   using bytes = std::string;
   using string_view = footstone::string_view;
-
-  enum class RetCode { Success, Failed, DelegateError, UriError, SchemeError, SchemeNotRegister,
-      PathNotMatch, PathError, ResourceNotFound, Timeout };
-  struct SyncContext {
-    footstone::string_view uri;
-    std::unordered_map<std::string, std::string> req_meta;
-    RetCode code;
-    std::unordered_map<std::string, std::string> rsp_meta;
-    bytes content;
-    SyncContext(const footstone::string_view& uri,
-                const std::unordered_map<std::string, std::string>& req_meta) {
-      this->uri = uri;
-      this->req_meta = req_meta;
-    }
-  };
-
-  struct ASyncContext {
-    footstone::string_view uri;
-    std::unordered_map<std::string, std::string> req_meta;
-    std::function<void(RetCode, std::unordered_map<std::string, std::string>, bytes)> cb;
-
-    ASyncContext(const footstone::string_view& uri,
-                 std::unordered_map<std::string, std::string> meta,
-                 std::function<void(RetCode, std::unordered_map<std::string, std::string>, bytes)> cb) {
-      this->uri = uri;
-      this->req_meta = meta;
-      this->cb = cb;
-    }
-  };
+  using RetCode = hippy::JobResponse::RetCode;
 
   UriHandler() = default;
   virtual ~UriHandler() = default;
 
   virtual void RequestUntrustedContent(
-      std::shared_ptr<SyncContext> ctx,
+      std::shared_ptr<RequestJob> request,
+      std::shared_ptr<JobResponse> response,
       std::function<std::shared_ptr<UriHandler>()> next) = 0;
   virtual void RequestUntrustedContent(
-      std::shared_ptr<ASyncContext> ctx,
+      std::shared_ptr<RequestJob> request,
+      std::function<void(std::shared_ptr<JobResponse>)> cb,
       std::function<std::shared_ptr<UriHandler>()> next) = 0;
 };
 

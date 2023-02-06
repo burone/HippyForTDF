@@ -23,20 +23,24 @@
 #import "HPAsserts.h"
 #import "HPConvert.h"
 #import "HPConvert+NativeRender.h"
-#import "HPDefaultImageProvider.h"
+#import "HPImageProviderProtocol.h"
 #import "HPToolUtils.h"
-#import "NativeRenderContext.h"
 #import "NativeRenderGradientObject.h"
+#import "NativeRenderImpl.h"
 #import "NativeRenderObjectView.h"
 #import "NativeRenderViewManager.h"
 #import "NativeRenderView.h"
 #import "UIView+DirectionalLayout.h"
 #import "UIView+NativeRender.h"
+#import "HPConvert+HPLayout.h"
 
 #include <objc/runtime.h>
 
+#include "VFSUriLoader.h"
+
 @interface NativeRenderViewManager () {
     NSUInteger _sequence;
+    __weak NativeRenderImpl *_renderImpl;
 }
 
 @end
@@ -59,8 +63,12 @@
     return nil;
 }
 
+- (NativeRenderImpl *)renderImpl {
+    return _renderImpl;
+}
+
 NATIVE_RENDER_COMPONENT_EXPORT_METHOD(measureInWindow:(NSNumber *)componentTag callback:(RenderUIResponseSenderBlock)callback) {
-    [self.renderContext addUIBlock:^(__unused id<NativeRenderContext> renderContext, NSDictionary<NSNumber *, UIView *> *viewRegistry) {
+    [self.renderImpl addUIBlock:^(__unused NativeRenderImpl *renderContext, NSDictionary<NSNumber *, UIView *> *viewRegistry) {
         UIView *view = viewRegistry[componentTag];
         if (!view) {
             callback(@{});
@@ -80,7 +88,7 @@ NATIVE_RENDER_COMPONENT_EXPORT_METHOD(measureInWindow:(NSNumber *)componentTag c
 }
 
 NATIVE_RENDER_COMPONENT_EXPORT_METHOD(measureInAppWindow:(NSNumber *)componentTag callback:(RenderUIResponseSenderBlock)callback) {
-    [self.renderContext addUIBlock:^(__unused id<NativeRenderContext> renderContext, NSDictionary<NSNumber *, UIView *> *viewRegistry) {
+    [self.renderImpl addUIBlock:^(__unused NativeRenderImpl *renderContext, NSDictionary<NSNumber *, UIView *> *viewRegistry) {
         UIView *view = viewRegistry[componentTag];
         if (!view) {
             callback(@{});
@@ -97,7 +105,7 @@ NATIVE_RENDER_COMPONENT_EXPORT_METHOD(measureInAppWindow:(NSNumber *)componentTa
 NATIVE_RENDER_COMPONENT_EXPORT_METHOD(getScreenShot:(nonnull NSNumber *)componentTag
                                       params:(NSDictionary *__nonnull)params
                                     callback:(RenderUIResponseSenderBlock)callback) {
-    [self.renderContext addUIBlock:^(__unused id<NativeRenderContext> renderContext, NSDictionary<NSNumber *, UIView *> *viewRegistry) {
+    [self.renderImpl addUIBlock:^(__unused NativeRenderImpl *renderContext, NSDictionary<NSNumber *, UIView *> *viewRegistry) {
         UIView *view = viewRegistry[componentTag];
         if (view == nil) {
             callback(@[]);
@@ -167,24 +175,31 @@ NATIVE_RENDER_CUSTOM_VIEW_PROPERTY(backgroundImage, NSString, NativeRenderView) 
         return;
     }
     NSString *standardizeAssetUrlString = path;
-    if ([self.renderContext.frameworkProxy respondsToSelector:@selector(standardizeAssetUrlString:forRenderContext:)]) {
-        standardizeAssetUrlString = [self.renderContext.frameworkProxy standardizeAssetUrlString:path forRenderContext:self.renderContext];
-    }
-    NSURL *url = HPURLWithString(standardizeAssetUrlString, nil);
     __weak NativeRenderView *weakView = view;
-    HPAssert([self.renderContext.frameworkProxy respondsToSelector:@selector(URILoader)], @"frameworkproxy must respond to selector URILoader");
-    self.renderContext.frameworkProxy.URILoader->loadContentsAsynchronously(url, nil, ^(NSData *data, NSURLResponse *response, NSError *error) {
-        HPDefaultImageProvider *imageProvider = [[HPDefaultImageProvider alloc] init];
-        imageProvider.imageDataPath = standardizeAssetUrlString;
-        [imageProvider setImageData:data];
-        imageProvider.scale = [[UIScreen mainScreen] scale];
-        UIImage *backgroundImage = [imageProvider image];
-        dispatch_async(dispatch_get_main_queue(), ^{
-            NativeRenderView *strongView = weakView;
-            if (strongView) {
-                strongView.backgroundImage = backgroundImage;
+    auto loader = [[self renderImpl] VFSUriLoader];
+    if (!loader) {
+        return;
+    }
+    loader->RequestUntrustedContent(path, nil, ^(NSData *data, NSURLResponse *response, NSError *error) {
+        NativeRenderImpl *renderImpl = self.renderImpl;
+        id<HPImageProviderProtocol> imageProvider = nil;
+        if (renderImpl) {
+            for (Class<HPImageProviderProtocol> cls in [renderImpl imageProviderClasses]) {
+                if ([cls canHandleData:data]) {
+                    imageProvider = [[(Class)cls alloc] init];
+                    break;
+                }
             }
-        });
+            imageProvider.imageDataPath = standardizeAssetUrlString;
+            [imageProvider setImageData:data];
+            UIImage *backgroundImage = [imageProvider image];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NativeRenderView *strongView = weakView;
+                if (strongView) {
+                    strongView.backgroundImage = backgroundImage;
+                }
+            });
+        }
     });
 }
 

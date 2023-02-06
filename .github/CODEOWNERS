@@ -8,100 +8,107 @@
 #  https://help.github.com/en/articles/about-code-owners
 #
 
-* @ilikethese @churchill-zhang @zoomchan-cxj @siguangli @ozonelmy @medns
-
-*.js @zoomchan-cxj
-*.jsx @zoomchan-cxj
-*.vue @zoomchan-cxj
-*.ts @zoomchan-cxj
-*.tsx @zoomchan-cxj
-*.java @siguangli
-*.cc @churchill-zhang @medns @ilikethese
-*.h @ozonelmy @churchill-zhang
-*.m @ozonelmy
-*.mm @ozonelmy
-
-# android gradle related
-*.gradle @siguangli
-gradle.properties @siguangli
+# universal files
+* @zoomchan-cxj
 
 # cmake related
 *.cmake @medns
 CMakeLists.txt @medns
 
-
-# ci, build & doc related
-/.github/ @zoomchan-cxj
-/.gitattributes @zoomchan-cxj
-/.gitignore @zoomchan-cxj
-/.husky/ @zoomchan-cxj
-/docker/ @medns
-/buildconfig/ @medns
-/docker/ @medns
-/.editorconfig @zoomchan-cxj
-/.markdownlintrc.json @zoomchan-cxj
-/docs/ @zoomchan-cxj
-
-# dom related
-/dom/ @ilikethese @churchill-zhang
-
-# driver related
+# driver: js
 /driver/js/ @churchill-zhang @ilikethese
-/driver/js/lib/ @zoomchan-cxj
-
-# examples related
-/framework/examples/android-demo/ @siguangli
-/framework/examples/ios-demo/ @ozonelmy
-/framework/examples/android-demo/res/ @zoomchan-cxj
-/framework/examples/ios-demo/res/ @zoomchan-cxj
-/driver/js/examples/hippy-react-demo/ @zoomchan-cxj
-/driver/js/examples/hippy-vue-demo/ @zoomchan-cxj
-
-# js related
-/driver/js/packages/ @zoomchan-cxj
+/driver/js/*.js @zoomchan-cxj
 /driver/js/.eslintignore @zoomchan-cxj
-/driver/js/lerna.json @zoomchan-cxj
+/driver/js/.eslintrc.js @zoomchan-cxj
+/driver/js/.nycrc @zoomchan-cxj
 /driver/js/tsconfig.json @zoomchan-cxj
+/driver/js/lerna.json @zoomchan-cxj
 /driver/js/package.json @zoomchan-cxj
 /driver/js/package-lock.json @zoomchan-cxj
-/driver/js/.nycrc @zoomchan-cxj
+/driver/js/examples/ @zoomchan-cxj
 /driver/js/scripts/ @zoomchan-cxj
-/package.json @zoomchan-cxj
-/package-lock.json @zoomchan-cxj
+/driver/js/packages/ @zoomchan-cxj
 
-# layout related
+# driver: vl:
+/driver/vl/ @medns
+
+# framework: android
+/framework/android/ @siguangli
+/framework/android/**/src/main/cpp/ @churchill-zhang @ilikethese
+
+# framework: ios
+/framework/ios/ @ozonelmy
+
+# framework: voltron
+/framework/voltron/ @lvfen @skindhu
+
+# dom: layout
 /layout/ @ilikethese
 
-# android related
-/framework/android/ @siguangli
-/framework/android/src/main/cpp/ @churchill-zhang
+# dom: others
+/dom/ @churchill-zhang @ilikethese
+
+# renderer: native
 /renderer/native/android/ @siguangli
-/renderer/native/android/src/main/jni @churchill-zhang
-/gradle/ @siguangli
+/renderer/native/ios/ @ozonelmy
+
+# renderer: tdf
+/renderer/tdf/ @vimerzhao
+/renderer/tdf/android/ @siguangli
+/renderer/tdf/android/**/src/main/cpp/ @churchill-zhang
+/renderer/tdf/ios/ @ozonelmy
+
+# renderer: voltron
+/renderer/voltron/ @lvfen @skindhu
+
+# module: vfs
+/modules/vfs/ @churchill-zhang @ilikethese
+/modules/vfs/android/ @siguangli
+/modules/vfs/android/**/src/main/cpp/ @churchill-zhang @ilikethese
+/modules/vfs/ios/ @ozonelmy
+/modules/vfs/voltron/ @lvfen @skindhu
+
+# module: voltron
+/modules/voltron/ @lvfen @skindhu
+
+# module: android
+/modules/android/ @siguangli
+/modules/android/jni/ @churchill-zhang @ilikethese
+
+# module: ios
+/modules/ios/ @ozonelmy
+
+# module: footstone
+/modules/footstone/ @churchill-zhang @ilikethese
+
+# devtools: backend
+/devtools/ @lavnFan
+
+# gh: config
+/.github/ @zoomchan-cxj
+
+# doc: example
+/framework/examples/android-demo/ @siguangli
+/framework/examples/android-demo/res/ @zoomchan-cxj
+/framework/examples/ios-demo/ @ozonelmy
+/framework/examples/ios-demo/res/ @zoomchan-cxj
+
+# doc: pages
+/*.md @zoomchan-cxj
+/docs/ @zoomchan-cxj
+
+# build: gradle
 /gradle.properties @siguangli
 /gradlew @siguangli
 /gradlew.bat @siguangli
+/settings.gradle @siguangli
 /build.gradle @siguangli
-/setting.gradle @siguangli
+/gradle/ @siguangli
 
-# ios related
-/framework/ios/ @ozonelmy
-/renderer/native/ios/ @ozonelmy
-/hippy.podspec @ozonelmy
+# build: xcode
+/HippySDK.xcworkspace/ @ozonelmy
+/Hippy.podspec @ozonelmy
+/xcodeinitscript.sh @ozonelmy
 
-# voltron related
-/renderer/voltron/ @lvfen @skindhu
-/framework/voltron/ @lvfen @skindhu
-
-# devtools related
-/devtools/ @churchill-zhang @medns
-
-# modules related
-/modules/footstone @churchill-zhang
-/modules/android/ @siguangli
-/modules/android/jni @churchill-zhang
-/modules/ios/ @ozonelmy
-/modules/vfs/ @churchill-zhang
-
-# tdf renderer related
-/renderer/tdf/android/src/main/java/ @siguangli
+# build: config
+/buildconfig/ @medns
