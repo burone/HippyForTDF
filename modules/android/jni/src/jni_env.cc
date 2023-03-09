@@ -110,10 +110,6 @@ JNIEnv* JNIEnvironment::AttachCurrentThread() {
   return j_env;
 }
 
-void JNIEnvironment::setJavaVM(JavaVM *vm) {
-  j_vm_ = vm;
-}
-
 }
 }
 }
