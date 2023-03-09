@@ -23,44 +23,47 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.tencent.mtt.hippy.common.Callback;
 import com.tencent.renderer.FrameworkProxy;
-import com.tencent.renderer.NativeRenderProxy;
+import com.tencent.renderer.RenderProxy;
 import java.util.List;
 import java.util.Map;
 
 @SuppressWarnings("JavaJniMissingFunction")
-public class NativeRenderer implements Connector {
+public class NativeRenderer implements RenderConnector {
 
-    private final int mInstanceId;
+    private int mInstanceId;
     @Nullable
-    private NativeRenderProxy mRenderer;
+    private RenderProxy mRenderer;
 
     public NativeRenderer() {
         mInstanceId = createNativeRenderManager();
         Object obj = getNativeRendererInstance(mInstanceId);
-        if (obj instanceof NativeRenderProxy) {
-            mRenderer = (NativeRenderProxy) obj;
+        if (obj instanceof RenderProxy) {
+            mRenderer = (RenderProxy) obj;
         }
     }
 
+    @Override
     public void destroyRoot(int rootId) {
         if (mRenderer != null) {
             mRenderer.destroyRoot(rootId);
         }
     }
 
-    public void onRuntimeInitialized(@NonNull View root) {
+    @Override
+    public void onRuntimeInitialized(int rootId) {
         if (mRenderer != null) {
-            mRenderer.onRuntimeInitialized(root.getId());
+            mRenderer.onRuntimeInitialized(rootId);
         }
     }
 
-    public void recordSnapshot(@NonNull View rootView, @NonNull final Callback<byte[]> callback) {
-        if (mRenderer != null) {
-            mRenderer.recordSnapshot(rootView.getId(), callback);
+    @Override
+    public void recordSnapshot(int rootId, @NonNull Object callback) {
+        if (mRenderer != null && callback instanceof Callback) {
+            mRenderer.recordSnapshot(rootId, (Callback<byte[]>) callback);
         }
     }
 
-    @Nullable
+    @Override
     public View replaySnapshot(@NonNull Context context, @NonNull byte[] buffer) {
         if (mRenderer != null) {
             return mRenderer.replaySnapshot(context, buffer);
@@ -68,21 +71,23 @@ public class NativeRenderer implements Connector {
         return null;
     }
 
-    @Nullable
-    public View replaySnapshot(@NonNull Context context, @NonNull Map<String, Object> snapshotMap) {
+    @Override
+    public View replaySnapshot(@NonNull Context context,
+        @NonNull Map<String, Object> snapshotMap) {
         if (mRenderer != null) {
             return mRenderer.replaySnapshot(context, snapshotMap);
         }
         return null;
     }
 
-    public void setFrameworkProxy(@NonNull FrameworkProxy proxy) {
-        if (mRenderer != null) {
-            mRenderer.setFrameworkProxy(proxy);
+    @Override
+    public void setFrameworkProxy(@NonNull Object proxy) {
+        if (mRenderer != null && proxy instanceof FrameworkProxy) {
+            mRenderer.setFrameworkProxy((FrameworkProxy) proxy);
         }
     }
 
-    @Nullable
+    @Override
     public View createRootView(@NonNull Context context) {
         View rootView = null;
         if (mRenderer != null) {
@@ -91,24 +96,35 @@ public class NativeRenderer implements Connector {
         return rootView;
     }
 
+    @Override
     public void onResume() {
         if (mRenderer != null) {
             mRenderer.onResume();
         }
     }
 
+    @Override
     public void onPause() {
         if (mRenderer != null) {
             mRenderer.onPause();
         }
     }
 
+    @Override
     public void init(@Nullable List<Class<?>> controllers, @Nullable ViewGroup rootView) {
         if (mRenderer != null) {
             mRenderer.init(controllers, rootView);
         }
     }
 
+    @Override
+    public void addControllers(@NonNull List<Class<?>> controllers) {
+        if (mRenderer != null) {
+            mRenderer.addControllers(controllers);
+        }
+    }
+
+    @Override
     public void attachToDom(@NonNull Connector domConnector) {
         attachToDom(mInstanceId, domConnector.getInstanceId());
     }

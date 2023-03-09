@@ -20,14 +20,9 @@
 
 #pragma once
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wc++98-compat-extra-semi"
-
 #include "yoga/Yoga.h"
 
 #include "dom/layout_node.h"
-
-#pragma clang diagnostic pop
 
 namespace hippy {
 inline namespace dom {

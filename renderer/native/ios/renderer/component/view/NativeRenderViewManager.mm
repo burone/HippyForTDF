@@ -32,11 +32,11 @@
 #import "NativeRenderView.h"
 #import "UIView+DirectionalLayout.h"
 #import "UIView+NativeRender.h"
-#import "HPConvert+HPLayout.h"
 
 #include <objc/runtime.h>
 
 #include "VFSUriLoader.h"
+#include "dom/layout_node.h"
 
 @interface NativeRenderViewManager () {
     NSUInteger _sequence;
@@ -67,28 +67,68 @@
     return _renderImpl;
 }
 
-NATIVE_RENDER_COMPONENT_EXPORT_METHOD(measureInWindow:(NSNumber *)componentTag callback:(RenderUIResponseSenderBlock)callback) {
-    [self.renderImpl addUIBlock:^(__unused NativeRenderImpl *renderContext, NSDictionary<NSNumber *, UIView *> *viewRegistry) {
+static NSString * const NativeRenderViewManagerGetBoundingRelToContainerKey = @"relToContainer";
+static NSString * const NativeRenderViewManagerGetBoundingErrMsgrKey = @"errMsg";
+NATIVE_RENDER_COMPONENT_EXPORT_METHOD(getBoundingClientRect:(nonnull NSNumber *)hippyTag
+                                      options:(nullable NSDictionary *)options
+                                      callback:(RenderUIResponseSenderBlock)callback ) {
+    if (options && [[options objectForKey:NativeRenderViewManagerGetBoundingRelToContainerKey] boolValue]) {
+        [self measureInWindow:hippyTag withErrMsg:YES callback:callback];
+    } else {
+        [self measureInAppWindow:hippyTag withErrMsg:YES callback:callback];
+    }
+}
+
+NATIVE_RENDER_COMPONENT_EXPORT_METHOD(measureInWindow:(NSNumber *)componentTag
+                                      callback:(RenderUIResponseSenderBlock)callback) {
+    [self measureInWindow:componentTag withErrMsg:NO callback:callback];
+}
+
+- (void)measureInWindow:(NSNumber *)componentTag
+             withErrMsg:(BOOL)withErrMsg
+               callback:(RenderUIResponseSenderBlock)callback {
+    [self.renderImpl addUIBlock:^(__unused NativeRenderImpl *renderContext,
+                                     NSDictionary<NSNumber *, UIView *> *viewRegistry) {
         UIView *view = viewRegistry[componentTag];
         if (!view) {
-            callback(@{});
+            if (withErrMsg) {
+                NSString *formatStr = @"measure cannot find view with tag #%@";
+                NSString *errMsg = [NSString stringWithFormat:formatStr, componentTag];
+                callback(@{NativeRenderViewManagerGetBoundingErrMsgrKey : errMsg});
+            } else {
+                callback(@{});
+            }
             return;
         }
         UIView *rootView = viewRegistry[view.rootTag];
         if (!rootView) {
-            callback(@{});
+            if (withErrMsg) {
+                NSString *formatStr = @"measure cannot find view's root view with tag #%@";
+                NSString *errMsg = [NSString stringWithFormat:formatStr, componentTag];
+                callback(@{NativeRenderViewManagerGetBoundingErrMsgrKey : errMsg});
+            } else {
+                callback(@{});
+            }
             return;
         }
         CGRect windowFrame = [rootView convertRect:view.frame fromView:view.superview];
         callback(@{@"width":@(CGRectGetWidth(windowFrame)),
-                     @"height": @(CGRectGetHeight(windowFrame)),
-                     @"x":@(windowFrame.origin.x),
-                     @"y":@(windowFrame.origin.y)});
+                   @"height": @(CGRectGetHeight(windowFrame)),
+                   @"x":@(windowFrame.origin.x),
+                   @"y":@(windowFrame.origin.y)});
     }];
 }
 
-NATIVE_RENDER_COMPONENT_EXPORT_METHOD(measureInAppWindow:(NSNumber *)componentTag callback:(RenderUIResponseSenderBlock)callback) {
-    [self.renderImpl addUIBlock:^(__unused NativeRenderImpl *renderContext, NSDictionary<NSNumber *, UIView *> *viewRegistry) {
+NATIVE_RENDER_COMPONENT_EXPORT_METHOD(measureInAppWindow:(NSNumber *)componentTag
+                                      callback:(RenderUIResponseSenderBlock)callback) {
+    [self measureInAppWindow:componentTag withErrMsg:NO callback:callback];
+}
+
+- (void)measureInAppWindow:(NSNumber *)componentTag
+                withErrMsg:(BOOL)withErrMsg
+                  callback:(RenderUIResponseSenderBlock)callback {
+    [self.renderImpl addUIBlock:^(__unused NativeRenderImpl *renderContext,
+                                     NSDictionary<NSNumber *, UIView *> *viewRegistry) {
         UIView *view = viewRegistry[componentTag];
         if (!view) {
             callback(@{});
@@ -96,9 +136,9 @@ NATIVE_RENDER_COMPONENT_EXPORT_METHOD(measureInAppWindow:(NSNumber *)componentTa
         }
         CGRect windowFrame = [view.window convertRect:view.frame fromView:view.superview];
         callback(@{@"width":@(CGRectGetWidth(windowFrame)),
-                     @"height": @(CGRectGetHeight(windowFrame)),
-                     @"x":@(windowFrame.origin.x),
-                     @"y":@(windowFrame.origin.y)});
+                   @"height": @(CGRectGetHeight(windowFrame)),
+                   @"x":@(windowFrame.origin.x),
+                   @"y":@(windowFrame.origin.y)});
     }];
 }
 
@@ -176,7 +216,7 @@ NATIVE_RENDER_CUSTOM_VIEW_PROPERTY(backgroundImage, NSString, NativeRenderView) 
     }
     NSString *standardizeAssetUrlString = path;
     __weak NativeRenderView *weakView = view;
-    auto loader = [[self renderImpl] VFSUriLoader];
+    auto loader = [[self renderImpl] VFSUriLoader].lock();
     if (!loader) {
         return;
     }
@@ -272,9 +312,9 @@ NATIVE_RENDER_CUSTOM_VIEW_PROPERTY(shadowOffset, NSDictionary, NativeRenderView)
     }
 }
 
-NATIVE_RENDER_CUSTOM_VIEW_PROPERTY(overflow, OverflowType, NativeRenderView) {
+NATIVE_RENDER_CUSTOM_VIEW_PROPERTY(overflow, NSString, NativeRenderView) {
     if (json) {
-        view.clipsToBounds = [HPConvert OverflowType:json] != OverflowVisible;
+        view.clipsToBounds = ![json isEqualToString:@"visible"];
     } else {
         view.clipsToBounds = defaultView.clipsToBounds;
     }
@@ -421,16 +461,7 @@ NATIVE_RENDER_EXPORT_RENDER_OBJECT_PROPERTY(flexGrow, CGFloat)
 NATIVE_RENDER_EXPORT_RENDER_OBJECT_PROPERTY(flexShrink, CGFloat)
 NATIVE_RENDER_EXPORT_RENDER_OBJECT_PROPERTY(flexBasis, CGFloat)
 
-NATIVE_RENDER_EXPORT_RENDER_OBJECT_PROPERTY(flexDirection, FlexDirection)
-NATIVE_RENDER_EXPORT_RENDER_OBJECT_PROPERTY(flexWrap, FlexWrapMode)
-NATIVE_RENDER_EXPORT_RENDER_OBJECT_PROPERTY(justifyContent, FlexAlign)
-NATIVE_RENDER_EXPORT_RENDER_OBJECT_PROPERTY(alignItems, FlexAlign)
-NATIVE_RENDER_EXPORT_RENDER_OBJECT_PROPERTY(alignSelf, FlexAlign)
-NATIVE_RENDER_EXPORT_RENDER_OBJECT_PROPERTY(position, PositionType)
-
-NATIVE_RENDER_REMAP_RENDER_OBJECT_PROPERTY(display, displayType, DisplayType)
-
-NATIVE_RENDER_EXPORT_RENDER_OBJECT_PROPERTY(overflow, OverflowType)
+NATIVE_RENDER_EXPORT_RENDER_OBJECT_PROPERTY(overflow, NSString)
 
 NATIVE_RENDER_EXPORT_RENDER_OBJECT_PROPERTY(onLayout, NativeRenderDirectEventBlock)
 
@@ -441,25 +472,25 @@ NATIVE_RENDER_EXPORT_VIEW_PROPERTY(onDetachedFromWindow, NativeRenderDirectEvent
 
 NATIVE_RENDER_EXPORT_RENDER_OBJECT_PROPERTY(zIndex, NSInteger)
 
-static inline HPDirection ConvertDirection(id direction) {
+static inline hippy::Direction ConvertDirection(id direction) {
     if (!direction) {
-        return DirectionInherit;
+        return hippy::Direction::Inherit;
     }
     if ([direction isKindOfClass:[NSNumber class]]) {
-        return (HPDirection)[direction intValue];
+        return (hippy::Direction)[direction intValue];
     }
     else if ([direction isKindOfClass:[NSString class]]) {
         if ([direction isEqualToString:@"rtl"]) {
-            return DirectionRTL;
+            return hippy::Direction::RTL;
         }
         else if ([direction isEqualToString:@"ltr"]) {
-            return DirectionLTR;
+            return hippy::Direction::LTR;
         }
         else {
-            return DirectionInherit;
+            return hippy::Direction::Inherit;
         }
     }
-    return DirectionInherit;
+    return hippy::Direction::Inherit;
 }
 
 NATIVE_RENDER_CUSTOM_RENDER_OBJECT_PROPERTY(direction, id, NativeRenderObjectView) {

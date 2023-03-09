@@ -22,12 +22,21 @@
 
 #include <memory>
 
-#include "driver/scope.h"
+#include "jni/jni_register.h"
+#include "jni/data_holder.h"
+#include "jni/jni_invocation.h"
 #include "jni/jni_env.h"
+#include "jni/scoped_java_ref.h"
 
-class Scope;
+namespace hippy {
+inline namespace render {
+inline namespace tdf {
 
-class TDFRenderBridge {
- public:
-  static void RegisterScopeForUriLoader(uint32_t render_id, const std::shared_ptr<hippy::driver::Scope>& scope);
-};
+void RegisterTDFEngine(JNIEnv *j_env, jobject j_obj, jint j_render_id,
+                       jlong j_engine_id, jint j_root_view_id);
+
+void SetUriLoader(JNIEnv *j_env, jobject j_obj, jint j_render_id, jint j_vfs_id);
+
+}  // namespace tdf
+}  // namespace render
+}  // namespace hippy

@@ -23,6 +23,7 @@
 
 import { PROPERTIES_MAP } from '@css-loader/css-parser';
 import { getViewMeta, normalizeElementName } from '../elements';
+import { eventMethod } from '../util/event';
 import {
   unicodeToChar,
   capitalizeFirstLetter,
@@ -33,6 +34,7 @@ import {
   warn,
   isDev,
   isEmpty,
+  whitespaceFilter,
 } from '../util';
 import Native from '../runtime/native';
 import { eventHandlerType } from '../util/node';
@@ -72,11 +74,11 @@ function convertToDegree(value, unit = DEGREE_UNIT.DEG) {
     result = convertedNumValue.toFixed(2);
   }
   switch (unit) {
-      // turn unit
+    // turn unit
     case DEGREE_UNIT.TURN:
       result = `${(convertedNumValue * 360).toFixed(2)}`;
       break;
-      // radius unit
+    // radius unit
     case DEGREE_UNIT.RAD:
       result = `${(180 / Math.PI * convertedNumValue).toFixed(2)}`;
       break;
@@ -303,7 +305,7 @@ class ElementNode extends ViewNode {
           // update current node and child nodes
           !options.notToNative && updateWithChildren(this);
           return;
-          // Convert text related to character for interface.
+        // Convert text related to character for interface.
         case 'text':
         case 'value':
         case 'defaultValue':
@@ -316,7 +318,8 @@ class ElementNode extends ViewNode {
             }
           }
           if (!options || !options.textUpdate) {
-            value = value.trim().replace(/(&nbsp;|Â)/g, ' ');
+            // white space handler
+            value = whitespaceFilter(value);
           }
           value = unicodeToChar(value);
           break;
@@ -553,7 +556,12 @@ class ElementNode extends ViewNode {
       }
     }
     if (typeof this.polyfillNativeEvents === 'function') {
-      ({ eventNames, callback, options } = this.polyfillNativeEvents('addEventListener', eventNames, callback, options));
+      ({ eventNames, callback, options } = this.polyfillNativeEvents(
+          eventMethod.ADD,
+          eventNames,
+          callback,
+          options,
+      ));
     }
     this._emitter.addEventListener(eventNames, callback, options);
     transverseEventNames(eventNames, (eventName) => {
@@ -577,7 +585,12 @@ class ElementNode extends ViewNode {
       return null;
     }
     if (typeof this.polyfillNativeEvents === 'function') {
-      ({ eventNames, callback, options } = this.polyfillNativeEvents('removeEventListener', eventNames, callback, options));
+      ({ eventNames, callback, options } = this.polyfillNativeEvents(
+          eventMethod.REMOVE,
+          eventNames,
+          callback,
+          options,
+      ));
     }
     const observer = this._emitter.removeEventListener(eventNames, callback, options);
     transverseEventNames(eventNames, (eventName) => {
@@ -597,8 +610,8 @@ class ElementNode extends ViewNode {
     // Current Target always be the event listener.
     eventInstance.currentTarget = this;
     // But target be the first target.
-    // Be careful, here's different than Browser,
-    // because Hippy can't callback without element _emitter.
+    // Be careful, here's different from Browser,
+    // because Hippy can't call back without element _emitter.
     if (!eventInstance.target) {
       eventInstance.target = targetNode || this;
       // IMPORTANT: It's important for vnode diff and directive trigger.
@@ -616,7 +629,7 @@ class ElementNode extends ViewNode {
 
   /**
    * getBoundingClientRect
-   *
+   * @deprecated
    * Get the position and size of element
    * Because it's a async function, need await prefix.
    *

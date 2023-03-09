@@ -1,3 +1,27 @@
+## 0.0.17
+
+- update voltron_render to 0.0.9 to fix `ScrollView` UI error with `TextInput` component
+
+## 0.0.16
+
+- fix terminate crash
+
+## 0.0.15
+
+- update voltron_render to 0.0.8 to remove fluttertoast plugin
+
+## 0.0.14
+
+- update voltron_render to 0.0.7 to fix modal size error
+
+## 0.0.13
+
+- update voltron_render to 0.0.6 to fix cache engine mode ui size error
+
+## 0.0.12
+
+- fix voltron reload crash
+
 ## 0.0.11
 
 - update voltron_render to 0.0.5 to fix workerManager destroy crash

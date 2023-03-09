@@ -154,9 +154,11 @@ NSString *const NativeRenderUIManagerDidEndBatchNotification = @"NativeRenderUIM
     NSMutableDictionary<NSString *, id> *_viewManagers;
     NSDictionary<NSString *, Class> *_extraComponent;
     
-    std::shared_ptr<VFSUriLoader> _VFSUriLoader;
+    std::weak_ptr<VFSUriLoader> _VFSUriLoader;
     NSMutableArray<Class<HPImageProviderProtocol>> *_imageProviders;
     std::mutex _imageProviderMutex;
+    
+    std::function<void(int32_t, NSDictionary *)> _rootViewSizeChangedCb;
 }
 
 @end
@@ -290,7 +292,9 @@ NSString *const NativeRenderUIManagerDidEndBatchNotification = @"NativeRenderUIM
 #endif
     // Register view
     [_viewRegistry addRootComponent:rootView rootNode:rootNode forTag:componentTag];
-
+    
+    [rootView addObserver:self forKeyPath:@"frame" options:(NSKeyValueObservingOptionOld | NSKeyValueObservingOptionNew) context:NULL];
+    
     CGRect frame = rootView.frame;
 
     UIColor *backgroundColor = [rootView backgroundColor];
@@ -328,9 +332,41 @@ NSString *const NativeRenderUIManagerDidEndBatchNotification = @"NativeRenderUIM
 
 - (void)unregisterRootViewFromTag:(NSNumber *)rootTag {
     AssertMainQueue();
+    UIView *rootView = [_viewRegistry rootComponentForTag:rootTag];
+    if (rootView) {
+        [rootView removeObserver:self forKeyPath:@"frame"];
+    }
     std::lock_guard<std::mutex> lock([self renderQueueLock]);
     [_viewRegistry removeRootComponentWithTag:rootTag];
     [_renderObjectRegistry removeRootComponentWithTag:rootTag];
+}
+
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSKeyValueChangeKey,id> *)change context:(void *)context {
+    if ([keyPath isEqualToString:@"frame"] && [object isKindOfClass:[UIView class]]) {
+        CGRect curFrame = [change[NSKeyValueChangeNewKey] CGRectValue];
+        CGRect oriFrame = [change[NSKeyValueChangeOldKey] CGRectValue];
+        if (!CGRectEqualToRect(curFrame, oriFrame)) {
+            UIView *rootView = (UIView *)object;
+            NSNumber *rootTag = [rootView componentTag];
+            auto rootNode = [_viewRegistry rootNodeForTag:rootTag].lock();
+            auto domManager = _domManager.lock();
+            if (rootNode && domManager) {
+                NSDictionary *params = @{@"oldWidth": @(CGRectGetWidth(oriFrame)), @"oldHeight": @(CGRectGetHeight(oriFrame)),
+                                         @"width": @(CGRectGetWidth(curFrame)), @"height": @(CGRectGetHeight(curFrame)),
+                                         @"rootViewId": rootTag
+                };
+                auto value = std::make_shared<footstone::HippyValue>([params toHippyValue]);
+                auto event = std::make_shared<DomEvent>("onSizeChanged", rootNode, NO, NO, value);
+                std::function<void()> func = [rootNode, event](){
+                    rootNode->HandleEvent(event);
+                };
+                domManager->PostTask(hippy::Scene({func}));
+                if (_rootViewSizeChangedCb) {
+                    _rootViewSizeChangedCb([rootTag intValue], params);
+                }
+            }
+        }
+    }
 }
 
 - (void)setFrame:(CGRect)frame forRootView:(UIView *)view {
@@ -1050,8 +1086,8 @@ NSString *const NativeRenderUIManagerDidEndBatchNotification = @"NativeRenderUIM
     UIView *view = [self viewForComponentTag:@(componentTag) onRootTag:@(root_id)];
     NativeRenderViewEventType eventType = hippy::kPressIn == type ? NativeRenderViewEventType::NativeRenderViewEventTypePressIn : NativeRenderViewEventType::NativeRenderViewEventTypePressOut;
     if (view) {
-        BOOL canBePreventedInCapturing = [view canBePreventedByInCapturing:type];
-        BOOL canBePreventedInBubbling = [view canBePreventInBubbling:type];
+        BOOL canBePreventedInCapturing = [view canBePreventedByInCapturing:type.c_str()];
+        BOOL canBePreventedInBubbling = [view canBePreventInBubbling:type.c_str()];
         std::string block_type = type;
         __weak id weakSelf = self;
         [view addViewEvent:eventType eventListener:^(CGPoint) {
@@ -1094,8 +1130,8 @@ NSString *const NativeRenderUIManagerDidEndBatchNotification = @"NativeRenderUIM
         } else if (type == hippy::kTouchCancelEvent) {
             event_type = NativeRenderViewEventType::NativeRenderViewEventTypeTouchCancel;
         }
-        BOOL canBePreventedInCapturing = [view canBePreventedByInCapturing:type];
-        BOOL canBePreventedInBubbling = [view canBePreventInBubbling:type];
+        BOOL canBePreventedInCapturing = [view canBePreventedByInCapturing:type.c_str()];
+        BOOL canBePreventedInBubbling = [view canBePreventInBubbling:type.c_str()];
         const std::string type_ = type;
         __weak id weakSelf = self;
         [view addViewEvent:event_type eventListener:^(CGPoint point) {
@@ -1133,8 +1169,8 @@ NSString *const NativeRenderUIManagerDidEndBatchNotification = @"NativeRenderUIM
     UIView *view = [self viewForComponentTag:@(componentTag) onRootTag:@(root_id)];
     if (view) {
         NativeRenderViewEventType event_type = hippy::kShowEvent == type ? NativeRenderViewEventTypeShow : NativeRenderViewEventTypeDismiss;
-        BOOL canBePreventedInCapturing = [view canBePreventedByInCapturing:type];
-        BOOL canBePreventedInBubbling = [view canBePreventInBubbling:type];
+        BOOL canBePreventedInCapturing = [view canBePreventedByInCapturing:type.c_str()];
+        BOOL canBePreventedInBubbling = [view canBePreventInBubbling:type.c_str()];
         __weak id weakSelf = self;
         [view addViewEvent:event_type eventListener:^(CGPoint point) {
             id strongSelf = weakSelf;
@@ -1173,7 +1209,7 @@ NSString *const NativeRenderUIManagerDidEndBatchNotification = @"NativeRenderUIM
         [self addUIBlock:^(NativeRenderImpl *renderContext, NSDictionary<NSNumber *,__kindof UIView *> *viewRegistry) {
             NativeRenderImpl *uiManager = (NativeRenderImpl *)renderContext;
             UIView *view = [uiManager viewForComponentTag:@(componentTag) onRootTag:@(root_id)];
-            [view removeViewEvent:viewEventTypeFromName(name_)];
+            [view removeViewEvent:viewEventTypeFromName(name_.c_str())];
         }];
     } else if (eventName == kVSyncKey) {
        std::string name_ = eventName;
@@ -1187,7 +1223,7 @@ NSString *const NativeRenderUIManagerDidEndBatchNotification = @"NativeRenderUIM
         std::string name_ = eventName;
         [self addUIBlock:^(NativeRenderImpl *renderContext, NSDictionary<NSNumber *,__kindof UIView *> *viewRegistry) {
             UIView *view = [viewRegistry objectForKey:@(componentTag)];
-            [view removePropertyEvent:name_];
+            [view removePropertyEvent:name_.c_str()];
         }];
     }
 }
@@ -1209,8 +1245,8 @@ NSString *const NativeRenderUIManagerDidEndBatchNotification = @"NativeRenderUIM
         NSDictionary<NSString *, NSString *> *eventMap = [component eventNameMap];
         NSString *mapToEventName = [eventMap objectForKey:[NSString stringWithUTF8String:name_.c_str()]];
         if (mapToEventName) {
-            BOOL canBePreventedInCapturing = [view canBePreventedByInCapturing:name_];
-            BOOL canBePreventedInBubbling = [view canBePreventInBubbling:name_];
+            BOOL canBePreventedInCapturing = [view canBePreventedByInCapturing:name_.c_str()];
+            BOOL canBePreventedInBubbling = [view canBePreventInBubbling:name_.c_str()];
             __weak id weakSelf = self;
             [view addPropertyEvent:[mapToEventName UTF8String] eventCallback:^(NSDictionary *body) {
                 id strongSelf = weakSelf;
@@ -1299,12 +1335,16 @@ NSString *const NativeRenderUIManagerDidEndBatchNotification = @"NativeRenderUIM
     return [_imageProviders copy];
 }
 
-- (void)setVFSUriLoader:(std::shared_ptr<VFSUriLoader>)loader {
+- (void)setVFSUriLoader:(std::weak_ptr<VFSUriLoader>)loader {
     _VFSUriLoader = loader;
 }
 
-- (std::shared_ptr<VFSUriLoader>)VFSUriLoader {
+- (std::weak_ptr<VFSUriLoader>)VFSUriLoader {
     return _VFSUriLoader;
+}
+
+- (void)setRootViewSizeChangedEvent:(std::function<void(int32_t rootTag, NSDictionary *)>)cb {
+    _rootViewSizeChangedCb = cb;
 }
 
 @end

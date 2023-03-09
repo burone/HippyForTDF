@@ -254,7 +254,8 @@ class VoltronWidget extends StatefulWidget {
   }
 }
 
-class _VoltronWidgetState extends State<VoltronWidget> with TickerProviderStateMixin {
+// ignore: prefer_mixin
+class _VoltronWidgetState extends State<VoltronWidget> with TickerProviderStateMixin, WidgetsBindingObserver {
   Size? oldSize;
   final RootWidgetViewModel viewModel = RootWidgetViewModel();
 
@@ -269,6 +270,7 @@ class _VoltronWidgetState extends State<VoltronWidget> with TickerProviderStateM
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback(doFirstFrame);
     viewModel._wrapper = () => context;
     hasDispose = false;
@@ -508,41 +510,41 @@ class _VoltronWidgetState extends State<VoltronWidget> with TickerProviderStateM
   }
 
   void doFirstFrame(Duration timeStamp) {
-    _loadModule();
+    /// 防止从引擎缓存时启动，宽高都为0的情况
+    var rootSize = getSizeFromKey(viewModel.rootKey);
+    if (rootSize.width > 0 && rootSize.height > 0) {
+      _loadModule();
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback(doFirstFrame);
+    }
   }
 
-  void doFrame() {
+  void didChangeMetrics() {
     if (!hasDispose) {
       viewModel.onGlobalLayout();
-
-      final RenderBox? renderBox =
-          viewModel.rootKey.currentContext?.findRenderObject() as RenderBox;
-      var newSize = renderBox?.size;
-
-      if (newSize != null) {
-        var originOldSize = oldSize;
-        if (originOldSize == null ||
-            originOldSize.width != newSize.width ||
-            originOldSize.height != newSize.height) {
-          viewModel.onSizeChanged(
-            viewModel.id,
-            newSize.width,
-            newSize.height,
-            originOldSize?.width ?? 0,
-            originOldSize?.height ?? 0,
-          );
-          oldSize = Size(
-            newSize.width,
-            newSize.height,
-          );
+      WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
+        final RenderBox? renderBox = viewModel.rootKey.currentContext?.findRenderObject() as RenderBox;
+        var newSize = renderBox?.size;
+        if (newSize != null) {
+          var originOldSize = oldSize;
+          if (originOldSize == null ||
+              originOldSize.width != newSize.width ||
+              originOldSize.height != newSize.height) {
+            viewModel.updateRootSize();
+            oldSize = Size(
+              newSize.width,
+              newSize.height,
+            );
+          }
         }
-      }
+      });
     }
   }
 
   @override
   void dispose() {
     super.dispose();
+    WidgetsBinding.instance.removeObserver(this);
     viewModel.dispose();
     hasDispose = true;
   }

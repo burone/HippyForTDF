@@ -88,13 +88,7 @@ public class ControllerManager {
     public ControllerManager(@NonNull Renderer renderer) {
         mRenderer = renderer;
         mControllerRegistry = new ControllerRegistry(renderer);
-        mControllerUpdateManger = new ControllerUpdateManger(renderer);
-    }
-
-    public void init(@Nullable List<Class<?>> controllers) {
-        processControllers(controllers);
-        mControllerUpdateManger.setCustomPropsController(mControllerRegistry.getViewController(
-                HippyCustomPropsController.CLASS_NAME));
+        mControllerUpdateManger = new ControllerUpdateManger<>(renderer);
     }
 
     public RenderManager getRenderManager() {
@@ -106,7 +100,6 @@ public class ControllerManager {
         return (NativeRender) mRenderer;
     }
 
-    @NonNull
     private synchronized static void checkDefaultControllers() {
         if (sDefaultControllers != null) {
             return;
@@ -132,28 +125,19 @@ public class ControllerManager {
         sDefaultControllers.add(HippyWaterfallItemViewController.class);
     }
 
-    @SuppressWarnings("rawtypes")
-    private void processControllers(@Nullable List<Class<?>> controllers) {
-        checkDefaultControllers();
-        if (controllers != null) {
-            controllers.addAll(0, sDefaultControllers);
-        } else {
-            controllers = sDefaultControllers;
-        }
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public synchronized void addControllers(@NonNull List<Class<?>> controllers) {
         for (Class cls : controllers) {
-            if (!HippyViewController.class.isAssignableFrom(cls)) {
-                continue;
-            }
-            HippyController controllerAnnotation = (HippyController) cls
-                    .getAnnotation(HippyController.class);
-            if (controllerAnnotation == null) {
-                continue;
-            }
-            String name = controllerAnnotation.name();
-            String[] names = controllerAnnotation.names();
-            boolean lazy = controllerAnnotation.isLazyLoad();
-            boolean supportFlatten = controllerAnnotation.supportFlatten();
             try {
+                HippyController controllerAnnotation = (HippyController) cls
+                        .getAnnotation(HippyController.class);
+                if (controllerAnnotation == null) {
+                    continue;
+                }
+                String name = controllerAnnotation.name();
+                String[] names = controllerAnnotation.names();
+                boolean lazy = controllerAnnotation.isLazyLoad();
+                boolean supportFlatten = controllerAnnotation.supportFlatten();
                 ControllerHolder holder = new ControllerHolder(
                         (HippyViewController) cls.newInstance(), lazy, supportFlatten);
                 mControllerRegistry.addControllerHolder(name, holder);
@@ -166,8 +150,30 @@ public class ControllerManager {
                 e.printStackTrace();
             }
         }
+    }
+
+    public void initControllers(@Nullable List<Class<?>> controllers) {
+        checkDefaultControllers();
+        assert sDefaultControllers != null;
+        if (controllers != null) {
+            controllers.addAll(0, sDefaultControllers);
+        } else {
+            controllers = sDefaultControllers;
+        }
+        addControllers(controllers);
         mControllerRegistry.addControllerHolder(NodeProps.ROOT_NODE,
                 new ControllerHolder(new HippyViewGroupController(), false, false));
+        mControllerUpdateManger.setCustomPropsController(mControllerRegistry.getViewController(
+                HippyCustomPropsController.CLASS_NAME));
+    }
+
+    @SuppressWarnings("rawtypes")
+    @Nullable
+    public HippyCustomPropsController getCustomPropsController() {
+        HippyViewController controller = mControllerRegistry.getViewController(
+                HippyCustomPropsController.CLASS_NAME);
+        return (controller instanceof HippyCustomPropsController)
+                ? (HippyCustomPropsController) controller : null;
     }
 
     public void destroy() {
@@ -287,6 +293,7 @@ public class ControllerManager {
         return view;
     }
 
+    @SuppressWarnings("rawtypes")
     public void updateProps(@NonNull RenderNode node, @Nullable Map<String, Object> newProps,
             @Nullable Map<String, Object> events, @Nullable Map<String, Object> diffProps,
             boolean skipComponentProps) {
@@ -624,7 +631,8 @@ public class ControllerManager {
 
     private void reportAddViewException(int pid, View parent, int id, View child) {
         NativeRenderException exception = new NativeRenderException(ADD_CHILD_VIEW_FAILED_ERR,
-                getViewOperationExceptionMessage(pid, parent, id, child, "Add child to parent failed:"));
+                getViewOperationExceptionMessage(pid, parent, id, child,
+                        "Add child to parent failed:"));
         mRenderer.handleRenderException(exception);
     }
 }

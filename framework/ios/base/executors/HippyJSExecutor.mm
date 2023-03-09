@@ -56,6 +56,11 @@
 #include "footstone/task.h"
 #include "vfs/handler/uri_handler.h"
 #include "driver/napi/jsc/js_native_api_jsc.h"
+#include "driver/napi/js_native_turbo.h"
+
+#ifdef ENABLE_INSPECTOR
+#include "devtools/devtools_data_source.h"
+#endif
 
 NSString *const HippyJSCThreadName = @"com.tencent.hippy.JavaScript";
 
@@ -170,7 +175,6 @@ using WeakCtxValuePtr = std::weak_ptr<hippy::napi::CtxValue>;
                     NSDictionary *userInfo = @{
                         HPFatalModuleName: bridge.moduleName?:@"unknown",
                         NSLocalizedDescriptionKey:message?:@"unknown",
-                        NSLocalizedFailureErrorKey:message?:@"unknown",
                         HPJSStackTraceKey:stackFrames
                     };
                     NSError *error = [NSError errorWithDomain:HPErrorDomain code:2 userInfo:userInfo];
@@ -329,10 +333,7 @@ using WeakCtxValuePtr = std::weak_ptr<hippy::napi::CtxValue>;
     if (!enginekey) {
         return;
     }
-    dispatch_async(dispatch_get_main_queue(), ^{
-        HPLogInfo(@"[Hippy_OC_Log][Life_Circle],HippyJSCExecutor remove engine %@", enginekey);
-        [[HippyJSEnginesMapper defaultInstance] removeEngineResourceForKey:enginekey];
-    });
+    [[HippyJSEnginesMapper defaultInstance] removeEngineResourceForKey:enginekey];
 }
 
 - (NSString *)enginekey {

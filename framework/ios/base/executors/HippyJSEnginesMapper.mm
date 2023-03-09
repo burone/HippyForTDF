@@ -23,8 +23,12 @@
 #import "HippyJSEnginesMapper.h"
 #import "HPLog.h"
 
+#include "dom/dom_manager.h"
+#include "driver/engine.h"
+#include "footstone/worker.h"
 #include "footstone/worker_impl.h"
 #include "footstone/platform/ios/looper_driver.h"
+#include "footstone/task_runner.h"
 
 EngineResource::EngineResource() {
     Setup("Hippy Dom Thread");
@@ -63,7 +67,7 @@ using EngineMapper = std::unordered_map<std::string, EngineRef>;
 
 @interface HippyJSEnginesMapper () {
     EngineMapper _engineMapper;
-    std::recursive_mutex _mutex;
+    std::mutex _mutex;
 }
 
 @end
@@ -80,7 +84,7 @@ using EngineMapper = std::unordered_map<std::string, EngineRef>;
 }
 
 - (std::shared_ptr<EngineResource>)createJSEngineResourceForKey:(NSString *)key {
-    std::lock_guard<std::recursive_mutex> lock(_mutex);
+    std::lock_guard<std::mutex> lock(_mutex);
     const auto it = _engineMapper.find([key UTF8String]);
     bool findIT = (_engineMapper.end() != it);
     if (findIT) {
@@ -95,7 +99,7 @@ using EngineMapper = std::unordered_map<std::string, EngineRef>;
 }
 
 - (std::shared_ptr<EngineResource>)JSEngineResourceForKey:(NSString *)key {
-    std::lock_guard<std::recursive_mutex> lock(_mutex);
+    std::lock_guard<std::mutex> lock(_mutex);
     const auto it = _engineMapper.find([key UTF8String]);
     bool findIT = (_engineMapper.end() != it);
     if (findIT) {
@@ -109,12 +113,11 @@ using EngineMapper = std::unordered_map<std::string, EngineRef>;
 - (void)setEngine:(std::shared_ptr<EngineResource>)engineSource forKey:(NSString *)key {
     EngineRef ref { engineSource, 1 };
     std::pair<std::string, EngineRef> enginePair { [key UTF8String], ref };
-    std::lock_guard<std::recursive_mutex> lock(_mutex);
     _engineMapper.insert(enginePair);
 }
 
 - (void)removeEngineResourceForKey:(NSString *)key {
-    std::lock_guard<std::recursive_mutex> lock(_mutex);
+    std::lock_guard<std::mutex> lock(_mutex);
     const auto it = _engineMapper.find([key UTF8String]);
     bool findIT = (_engineMapper.end() != it);
     if (findIT) {

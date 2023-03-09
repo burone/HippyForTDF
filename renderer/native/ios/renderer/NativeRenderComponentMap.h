@@ -21,9 +21,16 @@
  */
 
 #import <Foundation/Foundation.h>
+
 #import "NativeRenderComponentProtocol.h"
-#include "dom/root_node.h"
+
 #include <memory>
+
+namespace hippy {
+inline namespace dom {
+class RootNode;
+}
+}
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -54,7 +61,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (NSMutableDictionary<NSNumber *, __kindof id<NativeRenderComponentProtocol>> *)componentsForRootTag:(NSNumber *)tag;
 
 - (__kindof id<NativeRenderComponentProtocol>)componentForTag:(NSNumber *)componentTag
-                                     onRootTag:(NSNumber *)tag;
+                                                    onRootTag:(NSNumber *)tag;
 
 @end
 

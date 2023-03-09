@@ -18,6 +18,7 @@ package com.tencent.mtt.hippy.views.viewpager;
 
 import static com.tencent.renderer.NativeRenderer.SCREEN_SNAPSHOT_ROOT_ID;
 
+import androidx.annotation.NonNull;
 import com.tencent.mtt.hippy.modules.Promise;
 import com.tencent.mtt.hippy.uimanager.HippyViewBase;
 import com.tencent.mtt.hippy.uimanager.NativeGestureDispatcher;
@@ -57,18 +58,15 @@ public class HippyViewPager extends ViewPager implements HippyViewBase, ClipChil
     private final boolean mReNotifyOnAttach = false;
     private ViewPagerPageChangeListener mPageListener;
     private final Handler mHandler = new Handler(Looper.getMainLooper());
-    @Nullable private Promise mCallBackPromise;
+    @Nullable
+    private Promise mCallBackPromise;
 
     private void init(Context context) {
         setCallPageChangedOnFirstLayout(true);
         setEnableReLayoutOnAttachToWindow(false);
-
-        mPageListener = new ViewPagerPageChangeListener(this);
-        setOnPageChangeListener(mPageListener);
         setAdapter(createAdapter(context));
         setLeftDragOutSizeEnabled(false);
         setRightDragOutSizeEnabled(false);
-
         if (I18nUtil.isRTL()) {
             setRotationY(180f);
         }
@@ -78,6 +76,11 @@ public class HippyViewPager extends ViewPager implements HippyViewBase, ClipChil
                 setScrollEnabled(false);
             }
         }
+    }
+
+    public void setPageChangeListener(@NonNull ViewPagerPageChangeListener listener) {
+        mPageListener = listener;
+        setOnPageChangeListener(mPageListener);
     }
 
     @Override
@@ -93,16 +96,12 @@ public class HippyViewPager extends ViewPager implements HippyViewBase, ClipChil
         init(context);
     }
 
-    public HippyViewPager(Context context) {
-        super(context);
-        init(context);
-    }
-
     public void setCallBackPromise(@Nullable Promise promise) {
         mCallBackPromise = promise;
     }
 
-    public @Nullable Promise getCallBackPromise() {
+    public @Nullable
+    Promise getCallBackPromise() {
         return mCallBackPromise;
     }
 

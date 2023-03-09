@@ -21,12 +21,13 @@
  */
 
 #import "NativeRenderViewPager.h"
-#import "float.h"
 #import "NativeRenderViewPagerItem.h"
 #import "UIView+NativeRender.h"
 #import "UIView+DirectionalLayout.h"
 #import "UIView+MountEvent.h"
 #import "HPLog.h"
+
+#include "float.h"
 
 @interface NativeRenderViewPager ()
 @property (nonatomic, strong) NSMutableArray<UIView *> *viewPagerItems;
@@ -310,7 +311,7 @@
     }
 }
 
-- (void)setConfirmedLayoutDirection:(HPDirection)confirmedLayoutDirection {
+- (void)setConfirmedLayoutDirection:(hippy::Direction)confirmedLayoutDirection {
     [super setConfirmedLayoutDirection:confirmedLayoutDirection];
     [self applyLayoutDirectionIfNeeded];
 }
