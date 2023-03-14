@@ -553,9 +553,9 @@ void YogaLayoutNode::Parser(std::unordered_map<std::string, std::shared_ptr<foot
     SetAspectRatio(static_cast<float>(style_map.find(kAspectRatio)->second->ToDoubleChecked()));
   }
 
-  // if (style_map.find(kAlignContent) != style_map.end()) {
-  //   SetAlignContent(GetFlexAlign(style_map.find(kAlignContent)->second->ToString()));
-  // }
+   if (style_map.find(kAlignContent) != style_map.end()) {
+     SetAlignContent(GetFlexAlign(style_map.find(kAlignContent)->second->ToStringChecked()));
+   }
 }
 
 YG_SET_NUMBER_PERCENT_AUTO_DECL(Width)
@@ -600,8 +600,8 @@ void YogaLayoutNode::SetFlexWrap(YGWrap wrap_mode) { YGNodeStyleSetFlexWrap(yoga
 
 void YogaLayoutNode::SetJustifyContent(YGJustify justify) { YGNodeStyleSetJustifyContent(yoga_node_, justify); }
 
-// void YogaLayoutNode::SetAlignContent(YGAlign align_content) { YGNodeStyleSetAlignContent(yoga_node_, align_content);
-// }
+ void YogaLayoutNode::SetAlignContent(YGAlign align_content) { YGNodeStyleSetAlignContent(yoga_node_, align_content);
+ }
 
 void YogaLayoutNode::SetAlignItems(YGAlign align_items) { YGNodeStyleSetAlignItems(yoga_node_, align_items); }
 
