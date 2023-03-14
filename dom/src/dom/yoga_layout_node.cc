@@ -428,7 +428,8 @@ void YogaLayoutNode::Parser(std::unordered_map<std::string, std::shared_ptr<foot
     SetFlexShrink(static_cast<float>(style_map.find(kFlexShrink)->second->ToDoubleChecked()));
   }
   if (style_map.find(kFlexBasis) != style_map.end()) {
-    SetFlexBasis(static_cast<float>(style_map.find(kFlexBasis)->second->ToDoubleChecked()));
+    auto dom_value = style_map.find(kFlexBasis)->second;
+    SetYGFlexBasis(dom_value);
   }
   if (style_map.find(kDirection) != style_map.end()) {
     SetDirection(GetDirection(style_map.find(kDirection)->second->ToStringChecked()));
@@ -558,6 +559,8 @@ void YogaLayoutNode::Parser(std::unordered_map<std::string, std::shared_ptr<foot
    }
 }
 
+YG_SET_NUMBER_PERCENT_AUTO_DECL(FlexBasis)
+
 YG_SET_NUMBER_PERCENT_AUTO_DECL(Width)
 
 YG_SET_NUMBER_PERCENT_AUTO_DECL(Height)
@@ -571,8 +574,6 @@ YG_SET_NUMBER_PERCENT_DECL(MinWidth)
 YG_SET_NUMBER_PERCENT_DECL(MinHeight)
 
 void YogaLayoutNode::SetDirection(YGDirection direction) { YGNodeStyleSetDirection(yoga_node_, direction); }
-
-void YogaLayoutNode::SetFlexBasis(float flex_basis) { YGNodeStyleSetFlexBasis(yoga_node_, flex_basis); }
 
 void YogaLayoutNode::SetFlex(float flex) { YGNodeStyleSetFlex(yoga_node_, flex); }
 
