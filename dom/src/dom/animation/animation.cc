@@ -139,6 +139,9 @@ void Animation::RemoveEventListener(const std::string& event) {
 
 void Animation::Start() {
   auto animation_manager = animation_manager_.lock();
+  if (!animation_manager) {
+    return;
+  }
   auto animation = animation_manager->GetAnimation(id_);
   if (!animation) {
     return;
@@ -260,6 +263,9 @@ void Animation::Run(uint64_t now, const AnimationOnRun& on_run) {
             current_value_ = child->Calculate(now);
             on_run(current_value_);
           }
+        } else {
+          child->Run(now, on_run);
+          current_value_ = child->current_value_;
         }
       } else if (exec_time < delay) {
         child->SetExecTime(exec_time_);
@@ -452,7 +458,6 @@ void Animation::Repeat(uint64_t now) {
       on_repeat_();
     }
   } else { // animation is done
-    cnt_ -= 1;
     return;
   }
   auto animation_manager = animation_manager_.lock();

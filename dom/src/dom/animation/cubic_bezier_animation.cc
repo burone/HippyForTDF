@@ -94,7 +94,7 @@ CubicBezierAnimation::CubicBezierAnimation(Mode mode,
     cubic_bezier_ = CubicBezier(CubicBezier::kEaseOutP1, CubicBezier::kEaseOutP2);
   } else if (func_ == kAnimationTimingFunctionEaseInOut) {
     cubic_bezier_ = CubicBezier(CubicBezier::kEaseInEaseOutP1, CubicBezier::kEaseInEaseOutP2);
-  } else if (func_ == kAnimationTimingFunctionCubicBezier) {
+  } else if (func_ == kAnimationTimingFunctionEase) {
     cubic_bezier_ = CubicBezier(CubicBezier::kDefaultP1, CubicBezier::kDefaultP2);
   } else {
     cubic_bezier_ = ParseCubicBezierStr(func_);
@@ -165,7 +165,7 @@ void CubicBezierAnimation::Update(Mode mode,
   if (animation_manager->IsActive(id_)) {
     return;
   }
-  
+
   mode_ = mode;
   delay_ = delay;
   start_value_ = start_value;

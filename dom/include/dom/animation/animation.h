@@ -90,6 +90,10 @@ class Animation {
     return cnt_;
   }
 
+  inline void SetRepeatCnt(int32_t cnt) {
+    cnt_ = cnt;
+  }
+
   inline uint64_t GetDelay() {
     return delay_;
   }
@@ -189,12 +193,12 @@ class Animation {
 
   void AddEventListener(const std::string& event, AnimationCb cb);
   void RemoveEventListener(const std::string& event);
-  void Start();
+  virtual void Start();
   void Run(uint64_t now, const AnimationOnRun& on_run);
-  void Destroy();
-  void Pause();
-  void Resume();
-  void Repeat(uint64_t now);
+  virtual void Destroy();
+  virtual void Pause();
+  virtual void Resume();
+  virtual void Repeat(uint64_t now);
 
  protected:
   uint32_t id_;
