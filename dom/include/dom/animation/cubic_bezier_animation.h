@@ -33,7 +33,7 @@ constexpr char kAnimationTimingFunctionLinear[] = "linear";
 constexpr char kAnimationTimingFunctionEaseIn[] = "ease-in";
 constexpr char kAnimationTimingFunctionEaseOut[] = "ease-out";
 constexpr char kAnimationTimingFunctionEaseInOut[] = "ease-in-out";
-constexpr char kAnimationTimingFunctionCubicBezier[] = "cubic-bezier";
+constexpr char kAnimationTimingFunctionEase[] = "ease";
 constexpr char kAnimationCubicBezierRegex[] = \
     "^cubic-bezier\\((\\d*.\\d+|\\d+),(\\d*.\\d+|\\d+),(\\d*.\\d+|\\d+),(\\d*.\\d+|\\d+)\\)$";
 
