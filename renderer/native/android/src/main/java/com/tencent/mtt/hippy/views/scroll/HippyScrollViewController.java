@@ -19,9 +19,11 @@ package com.tencent.mtt.hippy.views.scroll;
 import static com.tencent.renderer.NativeRenderer.SCREEN_SNAPSHOT_ROOT_ID;
 
 import android.content.Context;
+import android.graphics.Color;
 import android.view.View;
 import android.view.ViewGroup;
 
+import androidx.annotation.ColorInt;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
@@ -77,6 +79,13 @@ public class HippyScrollViewController<T extends ViewGroup & HippyScrollView> ex
     @Override
     protected View createViewImpl(Context context) {
         return null;
+    }
+
+    @HippyControllerProps(name = NodeProps.BACKGROUND_COLOR, defaultType = HippyControllerProps.NUMBER, defaultNumber = Color.TRANSPARENT)
+    public void setBackground(HippyScrollView view, @ColorInt int backgroundColor) {
+        if (view instanceof ViewGroup) {
+            ((ViewGroup)view).setBackgroundColor(backgroundColor);
+        }
     }
 
     @HippyControllerProps(name = "scrollEnabled", defaultType = HippyControllerProps.BOOLEAN, defaultBoolean = true)
